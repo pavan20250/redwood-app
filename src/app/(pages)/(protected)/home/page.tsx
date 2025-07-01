@@ -30,16 +30,16 @@ const StartupFunnelChart = dynamic(
 
 const Dashboard = () => {
   const [showWelcomeAlert, setShowWelcomeAlert] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
 
   useEffect(() => {
+    if (localStorage.getItem("dashboardWelcomeAlertHide") === "true") return;
     const alertCount = parseInt(sessionStorage.getItem("dashboardWelcomeAlertCount") || "0", 10);
-
     if (alertCount < 1) {
       const timer = setTimeout(() => {
         setShowWelcomeAlert(true);
         sessionStorage.setItem("dashboardWelcomeAlertCount", String(alertCount + 1));
       }, 2000);
-
       return () => clearTimeout(timer);
     }
   }, []);
@@ -114,9 +114,24 @@ const Dashboard = () => {
                 </li>
               </ol>
             </AlertDialogDescription>
+            <div className="flex items-center mt-4">
+              <input
+                type="checkbox"
+                id="dashboardWelcomeDontShowAgain"
+                checked={dontShowAgain}
+                onChange={e => setDontShowAgain(e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="dashboardWelcomeDontShowAgain">Don&apos;t show again</label>
+            </div>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowWelcomeAlert(false)}>
+            <AlertDialogCancel onClick={() => {
+              setShowWelcomeAlert(false);
+              if (dontShowAgain) {
+                localStorage.setItem("dashboardWelcomeAlertHide", "true");
+              }
+            }}>
               Got it
             </AlertDialogCancel>
           </AlertDialogFooter>

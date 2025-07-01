@@ -451,9 +451,10 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
     businessType: [
       "Select",
       "Product",
-      "Service",
-      "Product & Service",
+      "Services",
+      "Product+Services",
       "Trading",
+      "Product Manufactureing"
     ],
     natureOfCompany: [
       "Select",

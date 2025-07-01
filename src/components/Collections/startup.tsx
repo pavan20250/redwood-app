@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { FaEye, FaSearch } from 'react-icons/fa';
 import { PlusCircle, Trash } from "lucide-react";
 import { STAGING_DATABASE_ID, STARTUP_ID } from "@/appwrite/config";
@@ -52,7 +52,38 @@ const StartupsPage: React.FC = () => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { toast } = useToast();
+
+  // On mount and when path changes, handle page param only on /startup
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/startup") {
+      const pageParam = searchParams.get("page");
+      if (pageParam && !isNaN(Number(pageParam))) {
+        setCurrentPage(Number(pageParam));
+      }
+    } else {
+      setCurrentPage(1);
+      // Remove ?page param from URL if present
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      if (params.has("page")) {
+        params.delete("page");
+        router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      }
+    }
+  }, [searchParams, pathname, router]);
+
+  // When currentPage changes, update the URL query param (shallow routing) only on /startup
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/startup") {
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      params.set("page", currentPage.toString());
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [currentPage, searchParams, pathname, router]);
 
   useEffect(() => {
     const fetchStartups = async () => {

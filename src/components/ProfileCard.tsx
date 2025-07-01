@@ -16,6 +16,7 @@ const ProfileCard = () => {
   const [message, setMessage] = useState("");
   const [profilePic, setProfilePic] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const [uploading, setUploading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -26,9 +27,12 @@ const ProfileCard = () => {
           setUser(userData);
           setName(userData.name);
 
-          // Fetch the user image from Google OAuth provider
-          if (userData.prefs?.google_profile) {
+          if (userData.prefs?.profilePic) {
+            setProfilePic(userData.prefs.profilePic);
+          } else if (userData.prefs?.google_profile) {
             setProfilePic(userData.prefs.google_profile);
+          } else {
+            setProfilePic(null);
           }
         }
       } catch (error) {
@@ -68,6 +72,33 @@ const ProfileCard = () => {
     router.push("/home");
   };
 
+  const handleProfilePicChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    setUploading(true);
+    setMessage("");
+    try {
+      if (!user?.$id) throw new Error("User ID not found");
+      // Upload file to Appwrite Storage with userId as fileId
+      const uploadRes = await appwriteService.uploadFile(file, user.$id);
+      const fileId = uploadRes.$id;
+      // Get preview URL
+      const previewUrl = await appwriteService.getFilePreviewUrl(fileId);
+      // Update user profile with new image URL
+      await appwriteService.updateUserProfilePicture(user.$id, previewUrl);
+      // Refetch user data to get the latest profilePic from preferences
+      const updatedUser = await appwriteService.getCurrentUser();
+      if (updatedUser?.prefs?.profilePic) {
+        setProfilePic(`${updatedUser.prefs.profilePic}?t=${Date.now()}`); // cache-busting
+      }
+      setMessage("Profile picture updated!");
+    } catch (error) {
+      setMessage("Error uploading profile picture.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     user && (
       <div className="flex flex-col items-center relative">
@@ -94,6 +125,17 @@ const ProfileCard = () => {
                   <span className="text-gray-500">No Image</span>
                 </div>
               )}
+              {/* Upload button overlay */}
+              <label className="absolute bottom-0 right-0 bg-white bg-opacity-80 rounded-full p-1 cursor-pointer border border-gray-300 hover:bg-opacity-100 transition" title="Upload profile picture">
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfilePicChange}
+                  disabled={uploading}
+                />
+                <span className="text-xs text-gray-700">{uploading ? "..." : "✏️"}</span>
+              </label>
             </div>
             <div>
               <p className="text-3xl font-bold text-gray-800">{user.name}</p>

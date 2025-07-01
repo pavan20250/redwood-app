@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   STAGING_DATABASE_ID,
   PROJECTS_ID,
@@ -83,6 +83,8 @@ const ProjectsPage: React.FC = () => {
   const [projectCountError, setProjectCountError] = useState<string | null>(null);
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const [loading, setLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -110,16 +112,16 @@ const ProjectsPage: React.FC = () => {
 
   const [showContinueWithExisting, setShowContinueWithExisting] = useState(false);
 
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
   useEffect(() => {
-    // Get the count from sessionStorage (or default to 0)
+    if (localStorage.getItem("projectsInstructionsAlertHide") === "true") return;
     const alertCount = parseInt(sessionStorage.getItem("projectsInstructionsAlertCount") || "0", 10);
-  
     if (alertCount < 1) {
       const timer = setTimeout(() => {
         setShowInstructionsAlert(true);
         sessionStorage.setItem("projectsInstructionsAlertCount", String(alertCount + 1));
       }, 1000);
-  
       return () => clearTimeout(timer);
     }
   }, []);
@@ -644,6 +646,35 @@ const ProjectsPage: React.FC = () => {
     }
   };
 
+  // On mount and when path changes, handle page param only on /projects
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/projects") {
+      const pageParam = searchParams.get("page");
+      if (pageParam && !isNaN(Number(pageParam))) {
+        setCurrentPage(Number(pageParam));
+      }
+    } else {
+      setCurrentPage(1);
+      // Remove ?page param from URL if present
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      if (params.has("page")) {
+        params.delete("page");
+        router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      }
+    }
+  }, [searchParams, pathname, router]);
+
+  // When currentPage changes, update the URL query param (shallow routing) only on /projects
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/projects") {
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      params.set("page", currentPage.toString());
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [currentPage, searchParams, pathname, router]);
+
   return (
     <div className="p-2">
       <div className="flex space-x-3">
@@ -1125,38 +1156,50 @@ const ProjectsPage: React.FC = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Instructions to Add Projects</AlertDialogTitle>
             <AlertDialogDescription asChild>
-            <ol className="list-decimal list-inside space-y-2 text-black">
-              <li>
-                To add a new Project, click <b>+Add</b>. It shows a dialog form to fill.
-              </li>
-              <li className="text-red-500">
-                Startup Name, Founder Name, and Phone Number are mandatory fields for adding new project or checking project status.
-              </li>
-              <li>
-                click on check for duplication to check if the startup already exists in the database.
-              </li>
-              <li>
-                If duplication check passes, proceed to <b>Create New Startup</b> and add project record details, for creating a new project for the created startup.
-              </li>
-              <li>
-                If the Startup already exists, click on <b>Continue with existing startup</b> to add another project for the same Startup.
-              </li>
-              <li>
-                After creating a Project, screen automatically Redirects to the Project Screen!
-              </li>
-              <li className="text-red-500">
-                Buttons will be disabled If <b className="text-red-500">*</b> fields not filled.
-              </li>
-            </ol>
-          </AlertDialogDescription>
+              <ol className="list-decimal list-inside space-y-2 text-black">
+                <li>
+                  To add a new Project, click <b>+Add</b>. It shows a dialog form to fill.
+                </li>
+                <li className="text-red-500">
+                  Startup Name, Founder Name, and Phone Number are mandatory fields for adding new project or checking project status.
+                </li>
+                <li>
+                  click on check for duplication to check if the startup already exists in the database.
+                </li>
+                <li>
+                  If duplication check passes, proceed to <b>Create New Startup</b> and add project record details, for creating a new project for the created startup.
+                </li>
+                <li>
+                  If the Startup already exists, click on <b>Continue with existing startup</b> to add another project for the same Startup.
+                </li>
+                <li>
+                  After creating a Project, screen automatically Redirects to the Project Screen!
+                </li>
+                <li className="text-red-500">
+                  Buttons will be disabled If <b className="text-red-500">*</b> fields not filled.
+                </li>
+              </ol>
+            </AlertDialogDescription>
+            <div className="flex items-center mt-4">
+              <input
+                type="checkbox"
+                id="projectsInstructionsDontShowAgain"
+                checked={dontShowAgain}
+                onChange={e => setDontShowAgain(e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="projectsInstructionsDontShowAgain">Don&apos;t show again</label>
+            </div>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowInstructionsAlert(false)}>
+            <AlertDialogCancel onClick={() => {
+              setShowInstructionsAlert(false);
+              if (dontShowAgain) {
+                localStorage.setItem("projectsInstructionsAlertHide", "true");
+              }
+            }}>
               Got it
             </AlertDialogCancel>
-            {/*<AlertDialogAction onClick={() => setShowInstructionsAlert(false)}>
-              Close
-            </AlertDialogAction>*/}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

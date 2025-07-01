@@ -100,16 +100,16 @@ const ProjectViewPage = ({ id }: { id: string }) => {
   const [documentsKey, setDocumentsKey] = useState(0);
 
   const [showProjectAlert, setShowProjectAlert] = useState(false);
-    
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
   useEffect(() => {
+    if (localStorage.getItem("projectsScreenInstructionsAlertHide") === "true") return;
     const alertCount = parseInt(sessionStorage.getItem("projectsScreenInstructionsAlertCount") || "0", 10);
-  
     if (alertCount < 1) {
       const timer = setTimeout(() => {
         setShowProjectAlert(true);
         sessionStorage.setItem("projectsScreenInstructionsAlertCount", String(alertCount + 1));
       }, 1000);
-  
       return () => clearTimeout(timer);
     }
   }, []);
@@ -529,14 +529,26 @@ const ProjectViewPage = ({ id }: { id: string }) => {
                             
                           </ol>
                         </AlertDialogDescription>
+                        <div className="flex items-center mt-4">
+                          <input
+                            type="checkbox"
+                            id="projectsScreenInstructionsDontShowAgain"
+                            checked={dontShowAgain}
+                            onChange={e => setDontShowAgain(e.target.checked)}
+                            className="mr-2"
+                          />
+                          <label htmlFor="projectsScreenInstructionsDontShowAgain">Don&apos;t show again</label>
+                        </div>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel onClick={() => setShowProjectAlert(false)}>
+                          <AlertDialogCancel onClick={() => {
+                            setShowProjectAlert(false);
+                            if (dontShowAgain) {
+                              localStorage.setItem("projectsScreenInstructionsAlertHide", "true");
+                            }
+                          }}>
                             Got it
                           </AlertDialogCancel>
-                          {/*<AlertDialogAction onClick={() => setShowInstructionsAlert(false)}>
-                            Close
-                          </AlertDialogAction>*/}
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
