@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table";
 import { Query } from "appwrite";
-import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID } from "@/appwrite/config";
-import { client, databases } from "@/lib/utils";
+import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { client, databases, useIsStartupRoute } from "@/lib/utils";
 import { Storage, ID } from "appwrite";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   const[isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -70,6 +71,8 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
   const [validatedFund, setValidatedFund] = useState("");
   const [amountMatchError, setAmountMatchError] = useState(false);
 
+  const isStartupRoute = useIsStartupRoute();
+
   useEffect(() => {
     if (hasUnsavedChanges) {
       setIsDirty(true);
@@ -78,19 +81,27 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
     }
   }, [hasUnsavedChanges, setIsDirty]);
 
-  const fetchAllTables = useCallback(async () => {
+  const fetchAllTables = useCallback(async (isInitialLoad = false) => {
     try {
+      if (isInitialLoad) {
+        setIsInitialLoading(true);
+      }
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? TRANCHES_TABLE_COLLECTION_ID : TRANCHES_TABLE_COLLECTION_ID;
       const tablesResponse = await databases.listDocuments(
-        STAGING_DATABASE_ID,
-        TRANCHES_TABLE_COLLECTION_ID,
+        databaseId,
+        collectionId,
         [Query.equal("startupId", startupId)]
       );
 
       const tablesData = await Promise.all(
         tablesResponse.documents.map(async (tableDoc) => {
+          const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+          const collectionId = isStartupRoute ? TRANCHES_MILESTONES_ID : TRANCHES_MILESTONES_ID;
+
           const rowsResponse = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            TRANCHES_MILESTONES_ID,
+            databaseId,
+            collectionId,
             [
               Query.equal("startupId", startupId),
               Query.equal("tableId", tableDoc.tableId)
@@ -117,11 +128,15 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
       }
     } catch (error) {
       console.error("Error fetching tables:", error);
+    } finally {
+      if (isInitialLoad) {
+        setIsInitialLoading(false);
+      }
     }
-  }, [startupId, activeTableId]);
+  }, [startupId, activeTableId, isStartupRoute]);
 
   useEffect(() => {
-    fetchAllTables();
+    fetchAllTables(true);
   }, [fetchAllTables]);
 
   const handleAddNewTable = async () => {
@@ -156,8 +171,8 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
 
   useEffect(() => {
     if (editingRow) {
-      const { trancheType, amount, status } = editingRow;
-      const requiredFieldsFilled = !!trancheType && !!amount && !!status;
+      const { trancheType, amount } = editingRow;
+      const requiredFieldsFilled = !!trancheType && !!amount;
       setIsSaveButtonDisabled(!requiredFieldsFilled);
     } else {
       setIsSaveButtonDisabled(true);
@@ -195,7 +210,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
         });
       }
 
-      fetchAllTables();
+      fetchAllTables(false);
       setIsDialogOpen(false);
       setEditingRow(null);
       setError(null);
@@ -212,7 +227,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
   const handleDeleteRow = async (id: string) => {
     try {
       await databases.deleteDocument(STAGING_DATABASE_ID, TRANCHES_MILESTONES_ID, id);
-      fetchAllTables();
+      fetchAllTables(false);
       setIsDialogOpen(false);
       setEditingRow(null);
       setHasUnsavedChanges(false);
@@ -265,9 +280,19 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
           tableDoc.documents[0].$id,
           { ...table.formData, [field]: currentValue }
         );
+        toast({
+          title: "Saved",
+          description: "Your changes have been saved.",
+          duration: 2000,
+        });
       }
     } catch (error) {
       console.error("Error saving form:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save changes.",
+        variant: "destructive",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -290,7 +315,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
         fileId: uploadResponse.$id,
         fileName: file.name,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "Document upload successful",
         description: "Your document has been uploaded successfully!",
@@ -312,7 +337,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
         fileId: null,
         fileName: null,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "File deleted",
         description: "The file has been successfully deleted.",
@@ -401,7 +426,9 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
             <h3 className="text-lg font-medium">Tranches & Milestones</h3>
+            { !isStartupRoute && (
             <ButtonWithIcon label="Add Table" onClick={handleAddNewTable} />
+            )}
         </div>
           <div className="flex gap-2 p-2">
             {tables.map(table => (
@@ -462,7 +489,7 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
                 }} />  
               </div>
               <div>
-                <Label htmlFor="status">Status<span className="text-red-500">*</span></Label>
+                <Label htmlFor="status">Status</Label>
                 <Select
                   value={editingRow?.status || ""}
                   onValueChange={(value) => {
@@ -524,7 +551,18 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
           </form>
         </DialogContent>
       </Dialog>
-      {activeTable && (
+      {isInitialLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+        </div>
+      ) : !activeTable ? (
+        <div className="flex flex-col items-center justify-center h-64 bg-white rounded-lg border border-gray-300">
+          <p className="text-lg text-gray-600 mb-4">No Tranches & Milestones found</p>
+          {!isStartupRoute && (
+            <ButtonWithIcon label="Add New Table" onClick={handleAddNewTable} />
+          )}
+        </div>
+      ) : (
       <div className="bg-white p-1 shadow-md rounded-lg border border-gray-300">
       <div onClick={() => {
           setEditingRow({});
@@ -535,82 +573,87 @@ const TranchesMilestones: React.FC<TranchesMilestones> = ({ startupId, setIsDirt
         </div>
         <div className="grid grid-cols-4 gap-4 p-2 mb-4">
         <div>
-          <Label htmlFor="fundRaised">Fund Raised Amount</Label>
-          <div className="grid grid-cols-1 items-center gap-2">
-            <div className="flex items-center">
+          <Label htmlFor="fundRaised" className="text-sm font-medium mb-2 block">Fund Raised Amount</Label>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
             {!isEditingFundRaised ? (
-              <>
-                <span>
+              <div className="flex items-center gap-3">
+                <div className="min-w-[120px] px-3 py-2 bg-gray-50 rounded-md border border-gray-200">
                   {activeTable?.formData.fundRaised
                     ? `${formatToLakh(activeTable.formData.fundRaised)} Lakh`
                     : <span className="text-gray-400">No amount</span>
                   }
-                </span>
+                </div>
                 <Button
                   size="sm"
                   variant="outline"
+                  className="h-8 px-3"
                   onClick={() => {
                     setIsEditingFundRaised(true);
-                    setTempFundRaisedInput(fundRaisedInput);
-                    setTempFundRaisedUnit(fundRaisedUnit);
+                    // Convert the stored value back to the display format
+                    const storedValue = activeTable?.formData.fundRaised;
+                    if (storedValue) {
+                      const valueInLakhs = Number(storedValue) / 100000;
+                      setTempFundRaisedInput(valueInLakhs.toString());
+                      setTempFundRaisedUnit("Lakh");
+                    } else {
+                      setTempFundRaisedInput("");
+                      setTempFundRaisedUnit("Lakh");
+                    }
                   }}
                 >
                   Edit
                 </Button>
-              </>
+              </div>
             ) : (
-              <>
-                <Input
-                  id="fundRaised"
-                  type="number"
-                  placeholder="Enter Amount"
-                  value={tempFundRaisedInput}
-                  onChange={e => setTempFundRaisedInput(e.target.value)}
-                  min="0"
-                  className="w-16"
-                />
-                <Select
-                  value={tempFundRaisedUnit}
-                  onValueChange={value => setTempFundRaisedUnit(value)}
-                >
-                  <SelectTrigger id="fundRaisedUnit">
-                    <SelectValue placeholder="Select unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Lakh">Lakhs</SelectItem>
-                    <SelectItem value="Crore">Crores</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button
-                  size="sm"
-                  onClick={async () => {
-                    setFundRaisedInput(tempFundRaisedInput);
-                    setFundRaisedUnit(tempFundRaisedUnit);
-                    setIsEditingFundRaised(false);
-                    const baseValue = convertToBaseUnit(tempFundRaisedInput, tempFundRaisedUnit);
-                    await handleInputChange("fundRaised", String(baseValue));
-                  }}
-                  disabled={!tempFundRaisedInput}
-                >
-                  Save
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setIsEditingFundRaised(false)}
-                >
-                  Cancel
-                </Button>
-              </>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center border rounded-md overflow-hidden">
+                    <Input
+                      id="fundRaised"
+                      type="number"
+                      placeholder="Enter Amount"
+                      value={tempFundRaisedInput}
+                      onChange={e => setTempFundRaisedInput(e.target.value)}
+                      min="0"
+                      className="w-24 h-8 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                    />
+                    <Select
+                      value={tempFundRaisedUnit}
+                      onValueChange={value => setTempFundRaisedUnit(value)}
+                    >
+                      <SelectTrigger id="fundRaisedUnit" className="w-20 h-8 border-0 border-l rounded-none focus:ring-0">
+                        <SelectValue placeholder="Unit" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Lakh">Lakhs</SelectItem>
+                        <SelectItem value="Crore">Crores</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="h-8 px-3"
+                    onClick={async () => {
+                      setFundRaisedInput(tempFundRaisedInput);
+                      setFundRaisedUnit(tempFundRaisedUnit);
+                      setIsEditingFundRaised(false);
+                      const baseValue = convertToBaseUnit(tempFundRaisedInput, tempFundRaisedUnit);
+                      await handleInputChange("fundRaised", String(baseValue));
+                    }}
+                    disabled={!tempFundRaisedInput}
+                  >
+                    Save
+                  </Button>
+                </div>
+              </div>
             )}
             </div>
-            <div>
-              {amountMatchError && (
-                <p className="text-red-500 text-sm">
-                  Fund Raised amount does not match the validated amount.
-                </p>
-              )}
-            </div>
+            {amountMatchError && (
+              <p className="text-red-500 text-sm mt-1">
+                Fund Raised amount does not match the validated amount.
+              </p>
+            )}
           </div>
         </div>
 

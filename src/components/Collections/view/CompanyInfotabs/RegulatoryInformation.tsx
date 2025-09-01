@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID } from "@/appwrite/config";
+import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
 import { databases, useIsStartupRoute } from "@/lib/utils";
 import { Query } from "appwrite";
 import { EditIcon, SaveIcon, InfoIcon } from "lucide-react";
@@ -20,10 +20,11 @@ type RegulatoryData = {
   udyamRegNumber: string;
   profRegNumber: string;
   shopsActRegNumber: string;
+  notApplicable: string[];
 };
 
 type ErrorData = {
-  [K in keyof RegulatoryData]: string;
+  [K in keyof Omit<RegulatoryData, 'notApplicable'>]: string;
 };
 
 export const REGULATORY_COLLECTION_ID = "6731872d0023e52aebc3";
@@ -47,6 +48,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
     udyamRegNumber: "",
     profRegNumber: "",
     shopsActRegNumber: "",
+    notApplicable: []
   });
   const [errors, setErrors] = useState<ErrorData>({
     dpiitNumber: "",
@@ -79,13 +81,18 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? REGULATORY_COLLECTION_ID : REGULATORY_COLLECTION_ID;
+
         const response = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          REGULATORY_COLLECTION_ID,
+          databaseId,
+          collectionId,
           [Query.equal("startupId", startupId)]
         );
         if (response.documents.length > 0) {
           const document = response.documents[0];
+          const notApplicable = document.notApplicable || [];
+          
           setRegulatoryData({
             dpiitNumber: document.dpiitNumber || "",
             cinNumber: document.cinNumber || "",
@@ -95,6 +102,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             udyamRegNumber: document.udyamRegNumber || "",
             profRegNumber: document.profRegNumber || "",
             shopsActRegNumber: document.shopsActRegNumber || "",
+            notApplicable
           });
           setPreviousData({
             dpiitNumber: document.dpiitNumber || "",
@@ -105,6 +113,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             udyamRegNumber: document.udyamRegNumber || "",
             profRegNumber: document.profRegNumber || "",
             shopsActRegNumber: document.shopsActRegNumber || "",
+            notApplicable
           });
           setDocumentId(document.$id);
         } else {
@@ -117,17 +126,17 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             udyamRegNumber: "",
             profRegNumber: "",
             shopsActRegNumber: "",
+            notApplicable: []
           });
         }
       } catch (error) {
         console.error("Error fetching regulatory data:", error);
       }
     };
-  
-    if (startupId) {
-      fetchData();
-    }
-  }, [startupId]);
+
+    if (startupId) fetchData();
+  }, [startupId, isStartupRoute]);
+
 
   // Fetch Certificate of Incorporation fileId
   useEffect(() => {
@@ -309,11 +318,28 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
     return true;
   };
 
+  const handleNotApplicableChange = (field: keyof Omit<RegulatoryData, 'notApplicable'>) => {
+    setIsDirty(true);
+    setRegulatoryData(prev => {
+      const isNotApplicable = prev.notApplicable.includes(field);
+      const newNotApplicable = isNotApplicable
+        ? prev.notApplicable.filter(f => f !== field)
+        : [...prev.notApplicable, field];
+      
+      return {
+        ...prev,
+        notApplicable: newNotApplicable,
+        [field]: isNotApplicable ? prev[field] : "N/A"
+      };
+    });
+  };
+
   const handleInputChange = (
-    
     e: React.ChangeEvent<HTMLInputElement>,
-    field: keyof RegulatoryData
+    field: keyof Omit<RegulatoryData, 'notApplicable'>
   ) => {
+    if (regulatoryData.notApplicable.includes(field)) return;
+    
     setIsDirty(true);
     const formats = {
       dpiitNumber: "AAAA000000000",
@@ -408,10 +434,15 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
     let hasErrors = false;
 
     Object.entries(regulatoryData).forEach(([field, value]) => {
-      if (value !== "") { // Only validate non-empty fields
-        const format = formats[field as keyof RegulatoryData];
-        if (field !== "dpiitNumber" && !validateInput(value, format)) {
-          newErrors[field as keyof ErrorData] = `Please enter a valid ${field.replace('Number', '')} number`;
+      if (field === 'notApplicable') return;
+      
+      const fieldKey = field as keyof Omit<RegulatoryData, 'notApplicable'>;
+      const fieldValue = value as string;
+      
+      if (fieldValue !== "" && fieldValue !== "N/A") { // Only validate non-empty and non-NA fields
+        const format = formats[fieldKey];
+        if (field !== "dpiitNumber" && !validateInput(fieldValue, format)) {
+          newErrors[fieldKey] = `Please enter a valid ${field.replace('Number', '')} number`;
           hasErrors = true;
         }
       }
@@ -429,7 +460,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
     }
 
     try {
-      const { dpiitNumber, cinNumber, tanNumber, panNumber, gstNumber, udyamRegNumber, profRegNumber, shopsActRegNumber, } = regulatoryData;
+      const { dpiitNumber, cinNumber, tanNumber, panNumber, gstNumber, udyamRegNumber, profRegNumber, shopsActRegNumber, notApplicable } = regulatoryData;
       if (documentId) {
         await databases.updateDocument(
           STAGING_DATABASE_ID,
@@ -444,6 +475,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             udyamRegNumber,
             profRegNumber,
             shopsActRegNumber,
+            notApplicable
           }
         );
       } else {
@@ -460,19 +492,24 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             udyamRegNumber,
             profRegNumber,
             shopsActRegNumber,
+            notApplicable,
             startupId: startupId,
           }
         );
         setDocumentId(response.$id);
       }
+
       // Save changes to the Regulatory History collection
       const changes: { startupId: string; fieldChanged: string; oldValue: string; newValue: string; changedAt: string }[] = [];
 
       Object.keys(regulatoryData).forEach((key) => {
-        if (regulatoryData[key as keyof RegulatoryData] !== previousData?.[key as keyof RegulatoryData]) {
-          let oldValue = previousData?.[key as keyof RegulatoryData] || "N/A";
-          let newValue = regulatoryData[key as keyof RegulatoryData];
-      
+        if (key === 'notApplicable') return;
+        
+        const fieldKey = key as keyof Omit<RegulatoryData, 'notApplicable'>;
+        const oldValue = previousData?.[fieldKey] || "N/A";
+        const newValue = regulatoryData[fieldKey];
+        
+        if (newValue !== oldValue) {
           changes.push({
             startupId,
             fieldChanged: key,
@@ -498,7 +535,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
         title: "Error saving Regulatory Information",
         variant: "destructive",
       });
-    }  finally {
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -534,6 +571,7 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
               </span>
             </div>
           ) : (
+            ! isStartupRoute && (
             <div
               onClick={handleEdit}
               className="cursor-pointer border border-gray-300 rounded-full p-1 flex items-center space-x-1 mb-1"
@@ -541,12 +579,13 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
               <EditIcon size={15} />
               <span className="text-xs">Edit</span>
             </div>
+            )
           )}
         </div>
       </div>
 
       <div className="border border-gray-300 rounded-lg p-4 bg-white">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {[
             ["DPIIT Number", "dpiitNumber", "AAAAA00000000000"],
             ["CIN Number", "cinNumber", "A-00000-AA-0000-AAA-000000"],
@@ -556,71 +595,87 @@ const RegulatoryInformation: React.FC<RegulatoryInformationProps> = ({ startupId
             ["UDYAM Registration Number", "udyamRegNumber", "UDYAM-TN-00-0000000"],
             ["Professional Tax Registration","profRegNumber", "00-000-AA-00000"],
             ["Shops and Establishment Act Registration", "shopsActRegNumber", "TN-AAAAAA-AAAA-00-00-00000"]
-          ].map(([label, field, format]) => (
-            <div key={label} className="flex flex-col">
-              <div className="flex items-center mb-1">
-                <Label className="font-semibold text-gray-700">{label}</Label>
-                {["panNumber", "tanNumber"].includes(field) && (
-                  coiFileId ? (
-                    <a
-                      href={`${API_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${coiFileId}/view?project=${PROJECT_ID}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-1"
-                      title="View Certificate of Incorporation"
-                    >
-                      <FaEye className="ml-2 text-blue-500 hover:text-blue-700" size={20} />
-                    </a>
-                  ) : (
-                    <FaEye className="ml-2 text-gray-400" size={20} title="Certificate of Incorporation not uploaded" />
-                  )
-                )}
-                
-                {(["cinNumber", "dpiitNumber", "gstNumber", "udyamRegNumber", "profRegNumber", "shopsActRegNumber"] as FileIdField[]).includes(field as FileIdField) && (
-                  (() => {
-                    const fileId = fileIdMap[field as FileIdField];
-                    const title = titleMap[field as FileIdField];
-                    return fileId ? (
+          ].map(([label, field, format]) => {
+            const fieldKey = field as keyof Omit<RegulatoryData, 'notApplicable'>;
+            const isNotApplicable = regulatoryData.notApplicable.includes(fieldKey);
+            
+            return (
+              <div key={label} className="flex flex-col">
+                <div className="flex items-center mb-1">
+                  <Label className="font-semibold text-gray-700">{label}</Label>
+                  {isEditing && (
+                    <div className="ml-2 flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={isNotApplicable}
+                        onChange={() => handleNotApplicableChange(fieldKey)}
+                        className="mr-1"
+                      />
+                      <span className="text-xs text-gray-600">N/A</span>
+                    </div>
+                  )}
+                  {["panNumber", "tanNumber"].includes(field) && (
+                    coiFileId ? (
                       <a
-                        href={`${API_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${fileId}/view?project=${PROJECT_ID}`}
+                        href={`${API_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${coiFileId}/view?project=${PROJECT_ID}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="ml-1"
-                        title={title}
+                        title="View Certificate of Incorporation"
                       >
                         <FaEye className="ml-2 text-blue-500 hover:text-blue-700" size={20} />
                       </a>
                     ) : (
-                      <FaEye className="ml-2 text-gray-400" size={20} title={`${title} not uploaded`} />
-                    );
-                  })()
-                )}
-                <div className="relative ml-2">
-                  <span className={`absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 ${
-                    focusedField === field ? 'block' : 'hidden'
-                  } bg-gray-700 text-white text-xs rounded-md py-1 px-2 whitespace-nowrap z-10`}>
-                    Format: {format}
-                  </span>
+                      <FaEye className="ml-2 text-gray-400" size={20} title="Certificate of Incorporation not uploaded" />
+                    )
+                  )}
+                  
+                  {(["cinNumber", "dpiitNumber", "gstNumber", "udyamRegNumber", "profRegNumber", "shopsActRegNumber"] as FileIdField[]).includes(field as FileIdField) && (
+                    (() => {
+                      const fileId = fileIdMap[field as FileIdField];
+                      const title = titleMap[field as FileIdField];
+                      return fileId ? (
+                        <a
+                          href={`${API_ENDPOINT}/storage/buckets/${BUCKET_ID}/files/${fileId}/view?project=${PROJECT_ID}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-1"
+                          title={title}
+                        >
+                          <FaEye className="ml-2 text-blue-500 hover:text-blue-700" size={20} />
+                        </a>
+                      ) : (
+                        <FaEye className="ml-2 text-gray-400" size={20} title={`${title} not uploaded`} />
+                      );
+                    })()
+                  )}
+                  <div className="relative ml-2">
+                    <span className={`absolute left-1/2 transform -translate-x-1/2 bottom-full mb-2 ${
+                      focusedField === field ? 'block' : 'hidden'
+                    } bg-gray-700 text-white text-xs rounded-md py-1 px-2 whitespace-nowrap z-10`}>
+                      Format: {format}
+                    </span>
+                  </div>
                 </div>
+                <Input
+                  type="text"
+                  value={regulatoryData[fieldKey]}
+                  onChange={(e) => handleInputChange(e, fieldKey)}
+                  onFocus={() => setFocusedField(field)}
+                  onBlur={() => setFocusedField(null)}
+                  disabled={!isEditing || isNotApplicable}
+                  className={`border rounded px-2 py-1 text-black ${
+                    errors[fieldKey] ? 'border-red-500' : 'border-gray-300'
+                  } ${isNotApplicable ? 'bg-gray-100' : ''}`}
+                  placeholder={format as string}
+                  maxLength={(format as string).length}
+                />
+                {errors[fieldKey] && (
+                  <span className="text-red-500 text-xs mt-1">{errors[fieldKey]}</span>
+                )}
               </div>
-              <Input
-                type="text"
-                value={regulatoryData[field as keyof RegulatoryData]}
-                onChange={(e) => handleInputChange(e, field as keyof RegulatoryData)}
-                onFocus={() => setFocusedField(field)}
-                onBlur={() => setFocusedField(null)}
-                disabled={!isEditing}
-                className={`border rounded px-2 py-1 text-black ${
-                  errors[field as keyof ErrorData] ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder={format as string}
-                maxLength={(format as string).length}
-              />
-              {errors[field as keyof ErrorData] && (
-                <span className="text-red-500 text-xs mt-1">{errors[field as keyof ErrorData]}</span>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </>

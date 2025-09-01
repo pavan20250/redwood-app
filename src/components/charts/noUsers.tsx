@@ -103,7 +103,6 @@ export function NoUsers() {
       <Card >
         <CardHeader>
           <CardTitle>Registered Users</CardTitle>
-          <CardDescription>Current Statistics</CardDescription>
         </CardHeader>
         <CardContent>
           <ChartContainer config={chartConfig}>

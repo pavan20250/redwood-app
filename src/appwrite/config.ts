@@ -9,6 +9,9 @@ export const STARTUP_ID = process.env.NEXT_PUBLIC_STARTUP_ID!;
 export const PROJECTS_ID = process.env.NEXT_PUBLIC_PROJECTS_ID!;
 export const DATABASE_ID = process.env.NEXT_PUBLIC_DATABASE_ID!;
 
+export const STARTUP_DATABASE = process.env.NEXT_PUBLIC_STARTUP_DATABASE!;
+
+const PROFILE_BUCKET_ID = "68641b22002d2b74c110";
 
 type CreateUserAccount = {
   email: string;
@@ -143,10 +146,10 @@ export class AppwriteService {
   }
 
 
-  async uploadFile(file: File) {
+  async uploadFile(file: File, fileId?: string) {
     try {
-      const fileId = uuidv4(); // Generate a unique ID for the file
-      const response = await storageClient.createFile(BUCKET_ID, fileId, file);
+      const id = fileId || uuidv4();
+      const response = await storageClient.createFile(PROFILE_BUCKET_ID, id, file);
       return response;
     } catch (error) {
       console.error("Error uploading file:", error);
@@ -178,6 +181,14 @@ export class AppwriteService {
     }
   }
   
+  async getFilePreviewUrl(fileId: string) {
+    try {
+      return storageClient.getFilePreview(PROFILE_BUCKET_ID, fileId).toString();
+    } catch (error) {
+      console.error("Error generating file preview URL:", error);
+      throw error;
+    }
+  }
 }
 
 const appwriteService = new AppwriteService();

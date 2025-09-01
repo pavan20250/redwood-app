@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EditIcon, SaveIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { databases, useIsStartupRoute } from "@/lib/utils";
-import { API_ENDPOINT, BUCKET_ID, PROJECT_ID, PROJECTS_ID, STAGING_DATABASE_ID, STARTUP_ID } from "@/appwrite/config";
+import { API_ENDPOINT, BUCKET_ID, PROJECT_ID, PROJECTS_ID, STAGING_DATABASE_ID, STARTUP_DATABASE, STARTUP_ID } from "@/appwrite/config";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ReactSelect from "react-select";
 import Link from "next/link";
@@ -50,11 +50,27 @@ type DomainOption = {
 export const HISTORY_COLLECTON_ID = "67c82d7b000b564ff2e4";
 const DOMAIN_COLLECTION_ID = "681e348e0037680abed9";
 
+// Add validation function
+const validateCompanyName = (name: string, natureOfCompany: string): boolean => {
+  if (natureOfCompany === "PvtLtd") {
+    return name.toLowerCase().includes("pvt ltd") || name.toLowerCase().includes("private limited");
+  } else if (natureOfCompany === "LLP") {
+    return name.toLowerCase().includes("llp") || name.toLowerCase().includes("limited liability partnership");
+  }
+  return true;
+};
+
+// Add interface for field errors
+interface FieldErrors {
+  registeredCompanyName?: string;
+}
+
 const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }) => {
   const [startupData, setStartupData] = useState<StartupData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [updatedData, setUpdatedData] = useState<StartupData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState(""); 
   const { toast } = useToast();
@@ -72,51 +88,76 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
 
   useEffect(() => {
     const fetchStartupDetails = async () => {
-      if (startupId) {
-        try {
-          const data = await databases.getDocument(STAGING_DATABASE_ID, STARTUP_ID, startupId);
-          const parsedData = {
-            brandName: data.brandName,
-            businessType: data.businessType,
-            companyStage: data.companyStage,
-            registeredCountry: data.registeredCountry,
-            registeredCompanyName: data.registeredCompanyName,
-            dateOfIncorporation: data.dateOfIncorporation,
-            patentsCertifications: data.patentsCertifications,
-            registeredState: data.registeredState,
-            natureOfCompany: data.natureOfCompany,
-            domain: data.domain,
-            incubated: data.incubated,
-            revenue: data.revenue,
-            businessModel: data.businessModel,
-            subDomain: data.subDomain,
-            employees: data.employees,
+      if (!startupId) return;
+      try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? STARTUP_ID : STARTUP_ID;
+
+        const data = await databases.getDocument(databaseId, collectionId, startupId);
+        const parsedData = {
+          brandName: data.brandName ?? "",
+          businessType: data.businessType ?? "",
+          companyStage: data.companyStage ?? "",
+          registeredCountry: data.registeredCountry ?? "",
+          registeredCompanyName: data.registeredCompanyName ?? "",
+          dateOfIncorporation: data.dateOfIncorporation ?? "",
+          patentsCertifications: data.patentsCertifications ?? "",
+          registeredState: data.registeredState ?? "",
+          natureOfCompany: data.natureOfCompany ?? "",
+          domain: data.domain ?? "",
+          incubated: data.incubated ?? "",
+          revenue: data.revenue ?? "",
+          businessModel: data.businessModel ?? [],
+          subDomain: data.subDomain ?? "",
+          employees: data.employees ?? "",
+        };
+        setStartupData(parsedData);
+        setUpdatedData(parsedData);
+
+        // fetch receivedDate to restrict dateOfIncorporation input date
+        const projectResponse = await databases.listDocuments(
+          STAGING_DATABASE_ID,
+          PROJECTS_ID,
+          [Query.equal("startupId", startupId)]
+        );
+
+        if (projectResponse.documents.length > 0) {
+          const projectData = projectResponse.documents[0];
+          setReceivedDate(projectData.receivedDate ?? null);
+        } else {
+          setReceivedDate(null);
+        }
+      } catch (error: any) {
+        if (error && error.code === 404) {
+          // No data found, set all fields to empty
+          const emptyData = {
+            brandName: "",
+            businessType: "",
+            companyStage: "",
+            registeredCountry: "",
+            registeredCompanyName: "",
+            dateOfIncorporation: "",
+            patentsCertifications: "",
+            registeredState: "",
+            natureOfCompany: "",
+            domain: "",
+            incubated: "",
+            revenue: "",
+            businessModel: [],
+            subDomain: "",
+            employees: "",
           };
-          setStartupData(parsedData);
-          setUpdatedData(parsedData);
-
-          // fetch receivedDate to restrict dateOfIncorporation input date
-          const projectResponse = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            PROJECTS_ID,
-            [Query.equal("startupId", startupId)] 
-          );
-
-          if (projectResponse.documents.length > 0) {
-            const projectData = projectResponse.documents[0]; 
-            setReceivedDate(projectData.receivedDate);
-          } else {
-            console.error("No matching document found in PROJECTS_ID collection.");
-          }
-        } catch (error) {
-          console.error("Error fetching startup details:", error);
+          setStartupData(emptyData);
+          setUpdatedData(emptyData);
+        } else {
           setError("Failed to fetch startup details. Please try again later.");
         }
       }
     };
 
     fetchStartupDetails();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
+
 
   useEffect(() => {
     if (!startupId) return;
@@ -300,6 +341,17 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
   const handleSaveClick = async () => {
     if (!updatedData || !startupId) return;
     if (isSubmitting) return;
+
+    // Validate company name before saving
+    const isCompanyNameValid = validateCompanyName(updatedData.registeredCompanyName, updatedData.natureOfCompany);
+    if (!isCompanyNameValid && (updatedData.natureOfCompany === "PvtLtd" || updatedData.natureOfCompany === "LLP")) {
+      setFieldErrors({
+        ...fieldErrors,
+        registeredCompanyName: "Company name not matching with nature of company selected"
+      });
+      return;
+    }
+
     setIsSubmitting(true);
     setIsDirty(false);
     try {
@@ -360,7 +412,30 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
       if (key === "subDomain" || key === "registeredState" || key === "registeredCountry") {
         newValue = validateCharacterInput(value);
       }
-      setUpdatedData({ ...updatedData, [key]: newValue });
+      
+      const newData = { ...updatedData, [key]: newValue };
+      
+      // Clear field errors when either registeredCompanyName or natureOfCompany changes
+      if (key === "registeredCompanyName" || key === "natureOfCompany") {
+        const isValid = validateCompanyName(
+          key === "registeredCompanyName" ? newValue : newData.registeredCompanyName,
+          key === "natureOfCompany" ? newValue : newData.natureOfCompany
+        );
+        
+        if (!isValid && (newData.natureOfCompany === "PvtLtd" || newData.natureOfCompany === "LLP")) {
+          setFieldErrors({
+            ...fieldErrors,
+            registeredCompanyName: "Company name not matching with nature of company selected"
+          });
+        } else {
+          setFieldErrors({
+            ...fieldErrors,
+            registeredCompanyName: undefined
+          });
+        }
+      }
+      
+      setUpdatedData(newData);
     }
   };
   
@@ -376,9 +451,10 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
     businessType: [
       "Select",
       "Product",
-      "Service",
-      "Product & Service",
+      "Services",
+      "Product+Services",
       "Trading",
+      "Product Manufactureing"
     ],
     natureOfCompany: [
       "Select",
@@ -609,10 +685,15 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
             </span>
           </div>
         ) : (
-          <div className="cursor-pointer border border-gray-300 rounded-full p-1 flex items-center space-x-1 mb-1" onClick={handleEditClick}>
-            <EditIcon size={15} />
-            <span className="text-xs">Edit</span>
-          </div>
+          !isStartupRoute && (
+            <div
+              className="cursor-pointer border border-gray-300 rounded-full p-1 flex items-center space-x-1 mb-1"
+              onClick={handleEditClick}
+            >
+              <EditIcon size={15} />
+              <span className="text-xs">Edit</span>
+            </div>
+          )
         )}
       </div>
       <div className="grid gap-4 bg-white mx-auto p-3 rounded-lg border border-gray-300">
@@ -736,18 +817,25 @@ const CompanyDetails: React.FC<CompanyDetailsProps> = ({ startupId, setIsDirty }
                       min="0"
                     />
                   ) : ["companyStage", "businessType", "natureOfCompany", "domain", "incubated", "patentsCertifications"].includes(key) ? (
-                    renderDropdown(key)
+                    <div className="flex flex-col">
+                      {renderDropdown(key)}
+                    </div>
                   ) : (
-                    <Input
-                      disabled={!isEditing}
-                      value={updatedData?.[key] || ""}
-                      onChange={(e) => handleChange(key, e.target.value)}
-                      onKeyPress={(e) => {
-                        if (["subDomain", "registeredState", "registeredCountry"].includes(key) && !/[a-zA-Z\s]/.test(e.key)) {
-                          e.preventDefault();
-                        }
-                      }}
-                    />
+                    <div className="flex flex-col">
+                      <Input
+                        disabled={!isEditing}
+                        value={updatedData?.[key] || ""}
+                        onChange={(e) => handleChange(key, e.target.value)}
+                        onKeyPress={(e) => {
+                          if (["subDomain", "registeredState", "registeredCountry"].includes(key) && !/[a-zA-Z\s]/.test(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                      />
+                      {key === "registeredCompanyName" && fieldErrors.registeredCompanyName && (
+                        <span className="text-red-500 text-sm mt-1">{fieldErrors.registeredCompanyName}</span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

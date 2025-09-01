@@ -38,43 +38,54 @@ export function Domain() {
   const [chartData, setChartData] = useState<ChartDataItem[]>([]);
   const router = useRouter();
 
+  const fetchDomains = async () => {
+    try {
+      const response = await databases.listDocuments<Models.Document>(STAGING_DATABASE_ID, STARTUP_ID);
+      const startups = response.documents;
+
+      const domainCounts: { [key: string]: number } = startups.reduce((acc, startup) => {
+        const domain = startup.domain || "Other";
+        acc[domain] = (acc[domain] || 0) + 1;
+        return acc;
+      }, {} as { [key: string]: number });
+
+      const sortedDomains = Object.entries(domainCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      const colors = [
+        "hsl(var(--chart-1))",
+        "hsl(var(--chart-2))",
+        "hsl(var(--chart-3))",
+        "hsl(var(--chart-4))",
+        "hsl(var(--chart-5))",
+      ];
+
+      const formattedData: ChartDataItem[] = sortedDomains.map(([domain, count], index) => ({
+        domain,
+        startups: count,
+        fill: colors[index],
+      }));
+
+      setChartData(formattedData);
+    } catch (error) {
+      console.error("Error fetching domains:", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchDomains = async () => {
-      try {
-        const response = await databases.listDocuments<Models.Document>(STAGING_DATABASE_ID, STARTUP_ID);
-        const startups = response.documents;
+    fetchDomains();
 
-        const domainCounts: { [key: string]: number } = startups.reduce((acc, startup) => {
-          const domain = startup.domain || "Other";
-          acc[domain] = (acc[domain] || 0) + 1;
-          return acc;
-        }, {} as { [key: string]: number });
-
-        const sortedDomains = Object.entries(domainCounts)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 5);
-
-        const colors = [
-          "hsl(var(--chart-1))",
-          "hsl(var(--chart-2))",
-          "hsl(var(--chart-3))",
-          "hsl(var(--chart-4))",
-          "hsl(var(--chart-5))",
-        ];
-
-        const formattedData: ChartDataItem[] = sortedDomains.map(([domain, count], index) => ({
-          domain,
-          startups: count,
-          fill: colors[index],
-        }));
-
-        setChartData(formattedData);
-      } catch (error) {
-        console.error("Error fetching domains:", error);
-      }
+    // Listen for startup data changes
+    const handleStartupDataChange = () => {
+      fetchDomains();
     };
 
-    fetchDomains();
+    window.addEventListener('startupDataChanged', handleStartupDataChange);
+
+    return () => {
+      window.removeEventListener('startupDataChanged', handleStartupDataChange);
+    };
   }, []);
 
   const handlePieClick = (data: any) => {
@@ -89,7 +100,6 @@ export function Domain() {
     <Card>
       <CardHeader>
         <CardTitle>Top 5 Domains</CardTitle>
-        <CardDescription>Click on a domain to see startups</CardDescription>
       </CardHeader>
       <CardContent className="flex mt-3 gap-5">
         <ChartContainer config={chartConfig} className="w-[120px] h-[120px]">

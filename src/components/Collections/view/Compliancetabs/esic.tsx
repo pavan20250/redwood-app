@@ -10,8 +10,8 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Client, Databases, Query } from "appwrite";
-import { STAGING_DATABASE_ID, PROJECT_ID } from "@/appwrite/config";
-import { client, databases } from "@/lib/utils";
+import { STAGING_DATABASE_ID, PROJECT_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { client, databases, useIsStartupRoute } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -54,6 +54,7 @@ const months: string[] = [
 
 const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
     const [contributions, setContributions] = useState<Contribution[]>([]);
+    const [notApplicableMonths, setNotApplicableMonths] = useState<string[]>([]);
     const [isEditingESIC, setIsEditingESIC] = useState(false);
     const [isEditingEPF, setIsEditingEPF] = useState(false);
     const [financialYear, setFinancialYear] = useState("");
@@ -65,14 +66,24 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
     const [isEditingMetadata, setIsEditingMetadata] = useState(false);
     const [isEditingMetadata2, setIsEditingMetadata2] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const isStartupRoute = useIsStartupRoute();
+
     useEffect(() => {
         const fetchData = async () => {
             try {
+                const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+                const collectionId = isStartupRoute ? ESIC_COLLECTION_ID : ESIC_COLLECTION_ID;
+
                 const response = await databases.listDocuments(
-                    STAGING_DATABASE_ID,
-                    ESIC_COLLECTION_ID,
+                    databaseId,
+                    collectionId,
                     [Query.equal("startupId", startupId)]
                 );
+
+                // Get not applicable months from the first document
+                const notApplicableMonths = response.documents[0]?.notApplicableMonths || [];
+                setNotApplicableMonths(notApplicableMonths);
 
                 const fetchedData = months.map((month) => {
                     const existing = response.documents.find(
@@ -87,39 +98,42 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                         epfContribution: existing?.epfContribution || "",
                         contributionRemitted: existing?.contributionRemitted || "",
                         totalRemitted: existing?.totalRemitted || "",
-                        startupId: startupId, // Include startupId in the data
+                        startupId: startupId,
                     };
                 });
 
                 setContributions(fetchedData);
-            } catch (error) {
-                console.error("Failed to fetch ESIC details:", error);
-            }
+                } catch (error) {
+                    console.error("Failed to fetch ESIC details:", error);
+                }
         };
         const fetchMetadata = async () => {
             try {
-              const metadataResponse = await databases.listDocuments(
-                STAGING_DATABASE_ID,
-                ESIC_EPF_COLLECTION_ID,  
-                [Query.equal("startupId", startupId)]
-              );
-      
-              if (metadataResponse.documents.length > 0) {
-                const metadata = metadataResponse.documents[0];
-                setFinancialYear(metadata.financialYear || "");
-                setEmployerCode(metadata.employerCode ? metadata.employerCode.toString() : ""); 
-                setNote(metadata.note || "");
-                setFinancialYear2(metadata.financialYear2 || "");
-                setEstablishmentId(metadata.establishmentId ? metadata.establishmentId.toString() : ""); 
-                setNote2(metadata.note2 || "");
-              }
+                const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+                const collectionId = isStartupRoute ? ESIC_EPF_COLLECTION_ID : ESIC_EPF_COLLECTION_ID;
+
+                const metadataResponse = await databases.listDocuments(
+                    databaseId,
+                    collectionId,  
+                    [Query.equal("startupId", startupId)]
+                );
+
+                if (metadataResponse.documents.length > 0) {
+                    const metadata = metadataResponse.documents[0];
+                    setFinancialYear(metadata.financialYear || "");
+                    setEmployerCode(metadata.employerCode ? metadata.employerCode.toString() : "");
+                    setNote(metadata.note || "");
+                    setFinancialYear2(metadata.financialYear2 || "");
+                    setEstablishmentId(metadata.establishmentId ? metadata.establishmentId.toString() : "");
+                    setNote2(metadata.note2 || "");
+                }
             } catch (error) {
               console.error("Failed to fetch ESIC metadata:", error);
             }
-          };
-          fetchMetadata();
-          fetchData();
-    }, [startupId]);
+        };
+        fetchMetadata();
+        fetchData();
+    }, [startupId, isStartupRoute]);
 
     const formatNumber = (value: string) => {
         const number = parseFloat(value);
@@ -147,6 +161,7 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
             const ip = parseFloat(updated[index].contributionRemitted) || 0;
             updated[index].totalRemitted = (emp + ip).toString();
         }
+        
         setContributions(updated);
         setIsDirty(true);
     };
@@ -193,6 +208,7 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                     epfContribution: contribution.epfContribution,
                     contributionRemitted: contribution.contributionRemitted,
                     totalRemitted: contribution.totalRemitted,
+                    notApplicableMonths: notApplicableMonths,
                 };
 
                 if (contribution.$id) {
@@ -248,47 +264,77 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
         try {
-          const metadataResponse = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            ESIC_EPF_COLLECTION_ID, 
-            [Query.equal("startupId", startupId)]
-          );
-      
-          const data = {
-            startupId: startupId,
-            financialYear: financialYear,
-            employerCode: employerCode,
-            note: note,
-            financialYear2: financialYear2,
-            establishmentId: establishmentId,
-            note2: note2,
-          };
-      
-          if (metadataResponse.total > 0) {
-            // Update existing document
-            await databases.updateDocument(
-              STAGING_DATABASE_ID,
-              ESIC_EPF_COLLECTION_ID,  
-              metadataResponse.documents[0].$id,
-              data
+            const metadataResponse = await databases.listDocuments(
+                STAGING_DATABASE_ID,
+                ESIC_EPF_COLLECTION_ID,
+                [Query.equal("startupId", startupId)]
             );
-          } else {
-            // Create a new document
-            await databases.createDocument(
-              STAGING_DATABASE_ID,
-              ESIC_EPF_COLLECTION_ID,  
-              "unique()",
-              data
-            );
-          }
-      
-          setIsEditingMetadata(false);
+
+            const data = {
+                startupId: startupId,
+                financialYear: financialYear,
+                employerCode: employerCode,
+                note: note,
+                financialYear2: financialYear2,
+                establishmentId: establishmentId,
+                note2: note2,
+            };
+
+            if (metadataResponse.total > 0) {
+                // Update existing document
+                await databases.updateDocument(
+                    STAGING_DATABASE_ID,
+                    ESIC_EPF_COLLECTION_ID,
+                    metadataResponse.documents[0].$id,
+                    data
+                );
+            } else {
+                // Create a new document
+                await databases.createDocument(
+                    STAGING_DATABASE_ID,
+                    ESIC_EPF_COLLECTION_ID,
+                    "unique()",
+                    data
+                );
+            }
+
+            setIsEditingMetadata(false);
         } catch (error) {
-          console.error("Error saving ESIC metadata:", error);
+            console.error("Error saving ESIC metadata:", error);
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    const handleNotApplicableChange = (month: string) => {
+        setIsDirty(true);
+        setNotApplicableMonths(prev => {
+            const isNotApplicable = prev.includes(month);
+            const newNotApplicable = isNotApplicable
+                ? prev.filter(m => m !== month)
+                : [...prev, month];
+            
+            // Update the contribution values
+            setContributions(prevContributions => 
+                prevContributions.map(contribution => 
+                    contribution.month === month
+                        ? {
+                            ...contribution,
+                            employerContribution: isNotApplicable ? contribution.employerContribution : "",
+                            ipContribution: isNotApplicable ? contribution.ipContribution : "",
+                            totalContribution: isNotApplicable ? contribution.totalContribution : "",
+                            epfContribution: isNotApplicable ? contribution.epfContribution : "",
+                            contributionRemitted: isNotApplicable ? contribution.contributionRemitted : "",
+                            totalRemitted: isNotApplicable ? contribution.totalRemitted : "",
+                        }
+                        : contribution
+                )
+            );
+            
+            return newNotApplicable;
+        });
+    };
+
     // Calculate totals for ESIC
     const employerContributionTotal = contributions.reduce(
         (acc, curr) => acc + parseFloat(curr.employerContribution || "0"),
@@ -397,6 +443,7 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                 <TableHeader>
                     <TableRow>
                     <TableHead>Month</TableHead>
+                    <TableHead className="w-[100px]"></TableHead>
                     <TableHead>Employer Contribution (₹)</TableHead>
                     <TableHead>IP Contribution (₹)</TableHead>
                     <TableHead>Total Contribution (₹)</TableHead>
@@ -404,40 +451,62 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                 </TableHeader>
                     <TableBody>
                     {contributions.map((contribution, idx) => (
-                    <TableRow key={contribution.month}>
-                        <TableCell>{contribution.month}</TableCell>
+                    <TableRow 
+                        key={contribution.month} 
+                        className={notApplicableMonths.includes(contribution.month) ? "bg-gray-100 opacity-75" : ""}
+                    >
+                        <TableCell className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                            {contribution.month}
+                        </TableCell>
                         <TableCell>
-                            {isEditingESIC ? (
-                            <Input
-                                type="text"
-                                value={formatNumber(contribution.employerContribution)}
-                                onChange={(e) =>
-                                    handleInputChange(
-                                        idx,
-                                        "employerContribution",
-                                        e.target.value
-                                    )
-                                }
-                            />
-                            ) : (
-                                formatNumber(contribution.employerContribution)
+                            {isEditingESIC && (
+                                <input
+                                    type="checkbox"
+                                    checked={notApplicableMonths.includes(contribution.month)}
+                                    onChange={() => handleNotApplicableChange(contribution.month)}
+                                />
                             )}
                         </TableCell>
                         <TableCell>
                             {isEditingESIC ? (
-                            <Input
-                                type="text"
-                                value={formatNumber(contribution.ipContribution)}
-                                onChange={(e) =>
-                                    handleInputChange(
-                                        idx,
-                                        "ipContribution",
-                                        e.target.value
-                                    )
-                                }
-                            />
+                                <Input
+                                    type="text"
+                                    value={formatNumber(contribution.employerContribution)}
+                                    onChange={(e) =>
+                                        handleInputChange(
+                                            idx,
+                                            "employerContribution",
+                                            e.target.value
+                                        )
+                                    }
+                                    disabled={notApplicableMonths.includes(contribution.month)}
+                                    className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
+                                />
                             ) : (
-                                formatNumber(contribution.ipContribution)
+                                <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                    {formatNumber(contribution.employerContribution)}
+                                </span>
+                            )}
+                        </TableCell>
+                        <TableCell>
+                            {isEditingESIC ? (
+                                <Input
+                                    type="text"
+                                    value={formatNumber(contribution.ipContribution)}
+                                    onChange={(e) =>
+                                        handleInputChange(
+                                            idx,
+                                            "ipContribution",
+                                            e.target.value
+                                        )
+                                    }
+                                    disabled={notApplicableMonths.includes(contribution.month)}
+                                    className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
+                                />
+                            ) : (
+                                <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                    {formatNumber(contribution.ipContribution)}
+                                </span>
                             )}
                         </TableCell>
                         <TableCell>
@@ -453,15 +522,19 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                                             e.target.value
                                         )
                                     }
+                                    className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
                                 />
                             ) : (
-                                formatNumber(contribution.totalContribution)
+                                <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                    {formatNumber(contribution.totalContribution)}
+                                </span>
                             )}
                         </TableCell>
                     </TableRow>
                     ))}
-                    <TableRow>
+                    <TableRow className="font-semibold">
                         <TableCell>Total</TableCell>
+                        <TableCell></TableCell>
                         <TableCell>{formatNumber(employerContributionTotal.toString())}</TableCell>
                         <TableCell>{formatNumber(ipContributionTotal.toString())}</TableCell>
                         <TableCell>{formatNumber(totalContributionTotal.toString())}</TableCell>
@@ -542,6 +615,7 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
             <TableHeader>
                 <TableRow>
                     <TableHead>Month</TableHead>
+                    <TableHead className="w-[100px]"></TableHead>
                     <TableHead>EPF Contribution Remitted (Amount in ₹)</TableHead>
                     <TableHead>Total EPF-EPS Contribution Remitted (Amount in ₹)</TableHead>
                     <TableHead>Total EPS Contribution Remitted (Amount in ₹) </TableHead>
@@ -549,20 +623,38 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
             </TableHeader>
                 <TableBody>
                 {contributions.map((contribution, idx) => (
-                <TableRow key={contribution.month}>
-                    <TableCell>{contribution.month}</TableCell>
+                <TableRow 
+                    key={contribution.month} 
+                    className={notApplicableMonths.includes(contribution.month) ? "bg-gray-100 opacity-75" : ""}
+                >
+                    <TableCell className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                        {contribution.month}
+                    </TableCell>
                     <TableCell>
-                    {isEditingEPF ? (
-                    <Input
-                        type="text"
-                        value={formatNumber(contribution.epfContribution)}
-                        onChange={(e) =>
-                            handleInputChange(idx, "epfContribution", e.target.value )
-                        }
-                    />
-                    ) : (
-                        formatNumber(contribution.epfContribution)
-                    )}
+                        {isEditingEPF && (
+                            <input
+                                type="checkbox"
+                                checked={notApplicableMonths.includes(contribution.month)}
+                                onChange={() => handleNotApplicableChange(contribution.month)}
+                            />
+                        )}
+                    </TableCell>
+                    <TableCell>
+                        {isEditingEPF ? (
+                            <Input
+                                type="text"
+                                value={formatNumber(contribution.epfContribution)}
+                                onChange={(e) =>
+                                    handleInputChange(idx, "epfContribution", e.target.value )
+                                }
+                                disabled={notApplicableMonths.includes(contribution.month)}
+                                className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
+                            />
+                        ) : (
+                            <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                {formatNumber(contribution.epfContribution)}
+                            </span>
+                        )}
                     </TableCell>
                     <TableCell>
                         {isEditingEPF ? (
@@ -572,9 +664,13 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                                 onChange={(e) =>
                                     handleInputChange( idx, "contributionRemitted",  e.target.value)
                                 }
+                                disabled={notApplicableMonths.includes(contribution.month)}
+                                className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
                             />
                         ) : (
-                            formatNumber(contribution.contributionRemitted)
+                            <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                {formatNumber(contribution.contributionRemitted)}
+                            </span>
                         )}
                     </TableCell>
                     <TableCell>
@@ -590,15 +686,19 @@ const ESICDetails: React.FC<ESICDetailsProps> = ({ startupId, setIsDirty }) => {
                                         e.target.value
                                     )
                                 }
+                                className={notApplicableMonths.includes(contribution.month) ? "bg-gray-200" : ""}
                             />
                         ) : (
-                            formatNumber(contribution.totalRemitted)
+                            <span className={notApplicableMonths.includes(contribution.month) ? "text-gray-500" : ""}>
+                                {formatNumber(contribution.totalRemitted)}
+                            </span>
                         )}
                     </TableCell>
                 </TableRow>
                 ))}
-                <TableRow>
+                <TableRow className="font-semibold">
                     <TableCell>Total</TableCell>
+                    <TableCell></TableCell>
                     <TableCell>{formatNumber(epfContributionTotal.toString())}</TableCell>
                     <TableCell>{formatNumber(contributionRemittedTotal.toString())}</TableCell>
                     <TableCell>{formatNumber(totalRemittedTotal.toString())}</TableCell>

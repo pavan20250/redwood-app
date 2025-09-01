@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { FaEye, FaSearch } from 'react-icons/fa';
 import { PlusCircle, Trash } from "lucide-react";
 import { STAGING_DATABASE_ID, STARTUP_ID } from "@/appwrite/config";
@@ -13,8 +13,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import {nanoid} from "nanoid";
+import { Query } from "appwrite";
 import LoadingSpinner from "../ui/loading";
 
 type Startup = {
@@ -44,14 +47,49 @@ const StartupsPage: React.FC = () => {
   const [nameError, setNameError] = useState<string | null>(null);
   const [brandNameError, setBrandNameError] = useState<string | null>(null);
 
+  // pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
   const { toast } = useToast();
+
+  // On mount and when path changes, handle page param only on /startup
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/startup") {
+      const pageParam = searchParams.get("page");
+      if (pageParam && !isNaN(Number(pageParam))) {
+        setCurrentPage(Number(pageParam));
+      }
+    } else {
+      setCurrentPage(1);
+      // Remove ?page param from URL if present
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      if (params.has("page")) {
+        params.delete("page");
+        router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false });
+      }
+    }
+  }, [searchParams, pathname, router]);
+
+  // When currentPage changes, update the URL query param (shallow routing) only on /startup
+  useEffect(() => {
+    if (!searchParams || !pathname) return;
+    if (pathname === "/startup") {
+      const params = new URLSearchParams(Array.from(searchParams.entries()));
+      params.set("page", currentPage.toString());
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [currentPage, searchParams, pathname, router]);
 
   useEffect(() => {
     const fetchStartups = async () => {
       setLoading(true);
       try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID);
+        const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID, [Query.limit(300)]);
         const startupData = response.documents.map((doc: Document) => ({
           id: doc.$id,
           name: doc.name || "",
@@ -205,6 +243,16 @@ const StartupsPage: React.FC = () => {
     year: "numeric",
   });
 
+  // pagination calculation
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentStartups = filteredStartups.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(filteredStartups.length / itemsPerPage);
+
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+  };
+
   return (
     <div className="p-2 mx-auto">
       <div className="flex justify-between items-center mb-2">
@@ -312,6 +360,27 @@ const StartupsPage: React.FC = () => {
         </div>
       ) : (
       <div className="bg-white shadow-md rounded-lg border border-gray-300">
+        <div className="flex items-center justify-end p-2 space-x-2">
+          <Label>Items per page:</Label>
+          <Select
+            value={itemsPerPage.toString()}
+            onValueChange={(value) => {
+              setItemsPerPage(Number(value));
+              setCurrentPage(1);
+            }}
+          >
+            <SelectTrigger className="w-[70px]">
+              <SelectValue placeholder="10" />
+            </SelectTrigger>
+            <SelectContent>
+              {[5, 10, 20, 50].map((number) => (
+                <SelectItem key={number} value={number.toString()}>
+                  {number}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -323,7 +392,7 @@ const StartupsPage: React.FC = () => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredStartups.map((startup) => (
+            {currentStartups.map((startup) => (
               <TableRow key={startup.id} onDoubleClick={() => handleEditStartup(startup)}>
                 <TableCell>
                   <Checkbox
@@ -351,6 +420,94 @@ const StartupsPage: React.FC = () => {
             ))}
           </TableBody>
         </Table>
+        
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between p-4 border-t">
+          <div className="text-sm text-gray-500">
+            Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredStartups.length)} of {filteredStartups.length} entries
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(currentPage - 1)}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Condensed Pagination Logic */}
+            {(() => {
+              const pageButtons = [];
+              const pageNeighbors = 2; // how many neighbors to show on each side
+              let startPage = Math.max(2, currentPage - pageNeighbors);
+              let endPage = Math.min(totalPages - 1, currentPage + pageNeighbors);
+
+              // Always show first page
+              pageButtons.push(
+                <Button
+                  key={1}
+                  variant={currentPage === 1 ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handlePageChange(1)}
+                >
+                  1
+                </Button>
+              );
+
+              // Show left ellipsis if needed
+              if (startPage > 2) {
+                pageButtons.push(
+                  <span key="start-ellipsis" className="px-1">...</span>
+                );
+              }
+
+              // Show middle page numbers
+              for (let i = startPage; i <= endPage; i++) {
+                pageButtons.push(
+                  <Button
+                    key={i}
+                    variant={currentPage === i ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(i)}
+                  >
+                    {i}
+                  </Button>
+                );
+              }
+
+              // Show right ellipsis if needed
+              if (endPage < totalPages - 1) {
+                pageButtons.push(
+                  <span key="end-ellipsis" className="px-1">...</span>
+                );
+              }
+
+              // Always show last page if more than one
+              if (totalPages > 1) {
+                pageButtons.push(
+                  <Button
+                    key={totalPages}
+                    variant={currentPage === totalPages ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => handlePageChange(totalPages)}
+                  >
+                    {totalPages}
+                  </Button>
+                );
+              }
+
+              return pageButtons;
+            })()}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handlePageChange(currentPage + 1)}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
       </div>)}
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>

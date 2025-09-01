@@ -5,8 +5,8 @@ import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow, Table
 import { PlusCircle, Save, Edit } from "lucide-react";
 import { Models } from "appwrite";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +80,7 @@ const FundAsk: React.FC<FundAskProps> = ({ startupId, setIsDirty }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaveButtonDisabled, setIsSaveButtonDisabled] = useState(true);
+  const isStartupRoute = useIsStartupRoute();
 
   useEffect(() => {
     if (hasUnsavedChanges) {
@@ -97,9 +98,13 @@ const FundAsk: React.FC<FundAskProps> = ({ startupId, setIsDirty }) => {
   useEffect(() => {
     const fetchFunds = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const proposedCollectionId = isStartupRoute ? PROPOSED_FUND_ASK_ID : PROPOSED_FUND_ASK_ID;
+        const validatedCollectionId = isStartupRoute ? VALIDATED_FUND_ASK_ID : VALIDATED_FUND_ASK_ID;
+
         const [proposedResponse, validatedResponse] = await Promise.all([
-          databases.listDocuments(STAGING_DATABASE_ID, PROPOSED_FUND_ASK_ID, [Query.equal("startupId", startupId)]),
-          databases.listDocuments(STAGING_DATABASE_ID, VALIDATED_FUND_ASK_ID, [Query.equal("startupId", startupId)]),
+          databases.listDocuments(databaseId, proposedCollectionId, [Query.equal("startupId", startupId)]),
+          databases.listDocuments(databaseId, validatedCollectionId, [Query.equal("startupId", startupId)]),
         ]);
 
         setProposedFunds(proposedResponse.documents.map(mapDocumentToFundItem));
@@ -150,7 +155,7 @@ const FundAsk: React.FC<FundAskProps> = ({ startupId, setIsDirty }) => {
     };
 
     fetchFunds();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   const handleAddItem = async () => {
     if (isSubmitting) return;
@@ -401,6 +406,7 @@ const FundTable: React.FC<FundTableProps> = ({
       maximumFractionDigits: 0
     }).format(amount);
   };
+  const isStartupRoute = useIsStartupRoute();
 
   return (
     <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">
@@ -410,7 +416,9 @@ const FundTable: React.FC<FundTableProps> = ({
           {!isValid && <p className="text-red-500">Total Amount does not match the Fund Ask amount!</p>}
         </div>
         <div onClick={onOpenDialog}>
+          { !isStartupRoute && (
           <ButtonWithIcon label="Add" />
+          )}
         </div>
       </div>
       <div className="flex items-center mb-4">
@@ -462,11 +470,13 @@ const FundTable: React.FC<FundTableProps> = ({
             <>
               <Tooltip>
                 <TooltipTrigger asChild>
+                  { !isStartupRoute && (
                   <Edit
                     size={20}
                     className="ml-2 cursor-pointer"
                     onClick={() => setIsEditing(true)}
                   />
+                  )}
                 </TooltipTrigger>
                 <TooltipContent>Add Amount</TooltipContent>
               </Tooltip>

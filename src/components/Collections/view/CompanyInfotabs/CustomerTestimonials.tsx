@@ -4,8 +4,8 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { PlusCircleIcon, ChevronRightIcon, PlusCircle } from "lucide-react";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -43,6 +43,8 @@ const CustomerTestimonials: React.FC<CustomerTestimonialsProps> = ({ startupId, 
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const isStartupRoute = useIsStartupRoute();
+
 
   useEffect(() => {
     if (hasUnsavedChanges) {
@@ -54,16 +56,20 @@ const CustomerTestimonials: React.FC<CustomerTestimonialsProps> = ({ startupId, 
 
   const fetchTestimonials = useCallback(async () => {
     try {
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? CUSTOMER_COLLECTION_ID : CUSTOMER_COLLECTION_ID;
+
       const response = await databases.listDocuments(
-        STAGING_DATABASE_ID,
-        CUSTOMER_COLLECTION_ID,
+        databaseId,
+        collectionId,
         [Query.equal("startupId", startupId)]
       );
+
       setTestimonials(response.documents);
     } catch (error) {
       console.error("Error fetching testimonials:", error);
     }
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   useEffect(() => {
     if (startupId) {
@@ -166,7 +172,9 @@ const CustomerTestimonials: React.FC<CustomerTestimonialsProps> = ({ startupId, 
                 setHasUnsavedChanges(false);
               }}
             >
-              <ButtonWithIcon label="Add" />
+              { !isStartupRoute && (
+                <ButtonWithIcon label="Add" />
+              )}
             </div>
           </DialogTrigger>
           <DialogContent className="w-full max-w-5xl max-h-[80vh] overflow-y-auto">
@@ -219,7 +227,6 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
       "customerName",
       "designation",
       "phone",
-      "email",
     ];
     const allFieldsFilled = requiredFields.every(
       (field) => testimonial[field]
@@ -236,7 +243,19 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
     const newQuery6 = [...(testimonial.query6 || ['', ''])];
     newQuery6[index] = value;
     onChange({ ...testimonial, query6: newQuery6 });
-};
+  };
+
+  const handleQuery7Change = (index: number, value: string) => {
+    const newQuery7 = [...(testimonial.query7 || ['', ''])];
+    newQuery7[index] = value;
+    onChange({ ...testimonial, query7: newQuery7 });
+  };
+
+  const handleQuery8Change = (index: number, value: string) => {
+    const newQuery8 = [...(testimonial.query8 || ['', ''])];
+    newQuery8[index] = value;
+    onChange({ ...testimonial, query8: newQuery8 });
+  };
 
   const handleChange = (field: string, value: string) => {
     onChange({ ...testimonial, [field]: value });
@@ -263,8 +282,8 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
 
   return (
     <div className="space-y-4 w-full">
-      <div className="grid grid-cols-4 gap-4 w-full">
-        <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-4 w-full">
+        <div>
           <Label htmlFor="customerName">Customer Name<span className="text-red-500">*</span></Label>
           <Input
             id="customerName"
@@ -273,7 +292,7 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
             onChange={(e) => handleChange("customerName", e.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div>
           <Label htmlFor="designation">Designation<span className="text-red-500">*</span></Label>
           <Input
             id="designation"
@@ -282,7 +301,16 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
             onChange={(e) => handleChange("designation", e.target.value)}
           />
         </div>
-        <div className="space-y-2">
+        <div>
+          <Label htmlFor="nameOfInstitution">Name of Institution</Label>
+          <Input
+            id="nameOfInstitution"
+            placeholder="Enter institution name"
+            value={testimonial.nameOfInstitution || ""}
+            onChange={(e) => handleChange("nameOfInstitution", e.target.value)}
+          />
+        </div>
+        <div>
           <Label htmlFor="phone">Phone<span className="text-red-500">*</span></Label>
           <Input
             type="text"
@@ -299,8 +327,8 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
           />
           {errors.phone && <p className="text-red-500 text-sm">{errors.phone}</p>}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="email">Email<span className="text-red-500">*</span></Label>
+        <div>
+          <Label htmlFor="email">Email</Label>
           <Input
             id="email"
             placeholder="Enter email address"
@@ -392,6 +420,44 @@ const TestimonialForm: React.FC<TestimonialFormProps> = ({
                 />
               </div>
           </div>
+          <div className="space-y-2">
+              <div>
+                <Label htmlFor="query7Label">Query 3</Label>
+                <Input
+                  id="query7Label"
+                  placeholder="Custom Question"
+                  value={testimonial.query7?.[0] || ''}
+                  onChange={(e) => handleQuery7Change(0, e.target.value)}
+                />
+              </div>
+              <div>
+                <Textarea
+                  id="query7Value"
+                  placeholder="Answer"
+                  value={testimonial.query7?.[1] || ''}
+                  onChange={(e) => handleQuery7Change(1, e.target.value)}
+                />
+              </div>
+          </div>
+          <div className="space-y-2">
+              <div>
+                <Label htmlFor="query8Label">Query 4</Label>
+                <Input
+                  id="query8Label"
+                  placeholder="Custom Question"
+                  value={testimonial.query8?.[0] || ''}
+                  onChange={(e) => handleQuery8Change(0, e.target.value)}
+                />
+              </div>
+              <div>
+                <Textarea
+                  id="query8Value"
+                  placeholder="Answer"
+                  value={testimonial.query8?.[1] || ''}
+                  onChange={(e) => handleQuery8Change(1, e.target.value)}
+                />
+              </div>
+          </div>
       </div>
       )}
       <div className="flex justify-end space-x-2">
@@ -428,6 +494,7 @@ const TestimonialsTable: React.FC<TestimonialsTableProps> = ({ testimonials, onE
           <TableRow>
             <TableHead>Customer Name</TableHead>
             <TableHead>Designation</TableHead>
+            <TableHead>Name of Institution</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead>Email</TableHead>
             <TableHead></TableHead>
@@ -442,6 +509,7 @@ const TestimonialsTable: React.FC<TestimonialsTableProps> = ({ testimonials, onE
               >
                 <TableCell>{testimonial.customerName}</TableCell>
                 <TableCell>{testimonial.designation}</TableCell>
+                <TableCell>{testimonial.nameOfInstitution}</TableCell>
                 <TableCell>{testimonial.phone}</TableCell>
                 <TableCell>{testimonial.email}</TableCell>
                 <TableCell>
@@ -465,20 +533,36 @@ const TestimonialsTable: React.FC<TestimonialsTableProps> = ({ testimonials, onE
                   <TableCell colSpan={5}>
                     <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50">
                       <div>
-                        <strong>What services/products are you using from the company?</strong>
-                        <p>{testimonial.query1}</p>
+                        {testimonial.query1 && (
+                          <div>
+                            <strong>What services/products are you using from the company?</strong>
+                            <div>{testimonial.query1}</div>
+                          </div>
+                        )}
                       </div>
                       <div>
-                        <strong>Your View on Service Utilization-will the service/product be beneficial for your company/personal use</strong>
-                        <p>{testimonial.query2}</p>
+                        {testimonial.query2 && (
+                          <div>
+                            <strong>Your View on Service Utilization - will the service/product be beneficial for your company/personal use?</strong>
+                            <div>{testimonial.query2}</div>
+                          </div>
+                        )}
                       </div>
                       <div>
-                        <strong>Unique selling proposition of the company-what made you switch to using this company s service/product-how were you doing earlier?</strong>
-                        <p>{testimonial.query3}</p>
+                        {testimonial.query3 && (
+                          <div>
+                            <strong>Unique selling proposition of the company - what made you switch to using this company s service/product - how were you doing earlier?</strong>
+                            <div>{testimonial.query3}</div>
+                          </div>
+                        )}
                       </div>
                       <div>
-                        <strong>Future of this Segment- in your view, what will be the future of this segment?</strong>
-                        <p>{testimonial.query4}</p>
+                        {testimonial.query4 && (
+                          <div>
+                            <strong>Future of this Segment - in your view, what will be the future of this segment?</strong>
+                            <div>{testimonial.query4}</div>
+                          </div>
+                        )}
                       </div>
                       {/* Query5 Label and Value */}
                       {testimonial.query5 && (
@@ -487,11 +571,23 @@ const TestimonialsTable: React.FC<TestimonialsTableProps> = ({ testimonials, onE
                           <p>{testimonial.query5[1]}</p>
                         </div>
                       )}
-                      {/* Query5 Label and Value */}
+                      {/* Query6 Label and Value */}
                       {testimonial.query6 && (
                         <div>
                           <strong>{testimonial.query6[0]}</strong>
                           <p>{testimonial.query6[1]}</p>
+                        </div>
+                      )}
+                      {testimonial.query7 && (
+                        <div>
+                          <strong>{testimonial.query7[0]}</strong>
+                          <p>{testimonial.query7[1]}</p>
+                        </div>
+                      )}
+                      {testimonial.query8 && (
+                        <div>
+                          <strong>{testimonial.query8[0]}</strong>
+                          <p>{testimonial.query8[1]}</p>
                         </div>
                       )}
                     </div>

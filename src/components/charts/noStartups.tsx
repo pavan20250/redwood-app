@@ -32,32 +32,42 @@ export function NoStartups() {
   const [chartData, setChartData] = useState<{ year: string; Startups: number }[]>([]);
   const router = useRouter();
 
+  const fetchStartups = async () => {
+    try {
+      const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID);
+      const startups = response.documents;
+
+      // Extract only the year from "Feb 2025" -> "2025"
+      const startupsByYear: { [key: string]: number } = startups.reduce((acc, startup) => {
+        const year = startup.year.split(" ")[1] || "Unknown"; // Extracts last part as year
+        acc[year] = (acc[year] || 0) + 1;
+        return acc;
+      }, {} as { [key: string]: number });
+
+      const formattedData = Object.entries(startupsByYear)
+        .map(([year, count]) => ({ year, Startups: count }))
+        .sort((a, b) => a.year.localeCompare(b.year));
+
+      setChartData(formattedData);
+    } catch (error) {
+      console.error("Error fetching startups:", error);
+    }
+  };
+
   useEffect(() => {
-    const fetchStartups = async () => {
-      try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID);
-        const startups = response.documents;
-  
-        // Extract only the year from "Feb 2025" -> "2025"
-        const startupsByYear: { [key: string]: number } = startups.reduce((acc, startup) => {
-          const year = startup.year.split(" ")[1] || "Unknown"; // Extracts last part as year
-          acc[year] = (acc[year] || 0) + 1;
-          return acc;
-        }, {} as { [key: string]: number });
-  
-        const formattedData = Object.entries(startupsByYear)
-          .map(([year, count]) => ({ year, Startups: count }))
-          .sort((a, b) => a.year.localeCompare(b.year));
-  
-        setChartData(formattedData);
-      } catch (error) {
-        console.error("Error fetching startups:", error);
-      }
-    };
-  
     fetchStartups();
+
+    // Listen for startup data changes
+    const handleStartupDataChange = () => {
+      fetchStartups();
+    };
+
+    window.addEventListener('startupDataChanged', handleStartupDataChange);
+
+    return () => {
+      window.removeEventListener('startupDataChanged', handleStartupDataChange);
+    };
   }, []);
-  
 
   const handleBarClick = (data: any) => {
     if (data && data.activePayload && data.activePayload[0]) {

@@ -89,6 +89,16 @@ export function AreaChartPortfolio() {
 
   useEffect(() => {
     fetchAndPrepareChartData();
+    // Listen for fund raised data changes
+    const handleFundRaisedDataChange = () => {
+      fetchAndPrepareChartData();
+    };
+
+    window.addEventListener('fundRaisedDataChanged', handleFundRaisedDataChange);
+
+    return () => {
+      window.removeEventListener('fundRaisedDataChanged', handleFundRaisedDataChange);
+    };
   }, [fetchAndPrepareChartData]);
 
   const chartConfig = {

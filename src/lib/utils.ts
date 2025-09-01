@@ -18,7 +18,7 @@ const databases = new Databases(client);
 /*Export the reusable instances and utility functions.*/
 export { client, databases };
 
-//route checks for prev. records
+//startup route checks
 export const useIsStartupRoute = () => {
   const pathname = usePathname();
   return pathname ? /^\/startup\/[a-zA-Z0-9]+$/.test(pathname) : false;

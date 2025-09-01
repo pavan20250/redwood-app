@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
 import { databases, useIsStartupRoute } from "@/lib/utils";
 import { Query } from "appwrite";
 import { EditIcon, SaveIcon } from "lucide-react";
@@ -88,9 +88,12 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? CONTACT_ID : CONTACT_ID;
+
         const response = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          CONTACT_ID,
+          databaseId,
+          collectionId,
           [Query.equal("startupId", startupId)]
         );
         if (response.documents.length > 0) {
@@ -154,7 +157,7 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
     if (startupId) {
       fetchData();
     }
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
   
 
   const validateWebsite = (url: string) => {
@@ -279,11 +282,13 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
   
     try {
       const { companyWebsite, email, primaryPhone, secondaryPhone, registeredAddress1, registeredAddress2, registeredCity, state, postalCode, communicationAddress1, communicationAddress2, communicationCity, communicationState, postalCode2 } = contactData;
-  
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? CONTACT_ID : CONTACT_ID;
+
       if (documentId) {
         await databases.updateDocument(
-          STAGING_DATABASE_ID,
-          CONTACT_ID,
+          databaseId,
+          collectionId,
           documentId,
           {
             companyWebsite,
@@ -304,8 +309,8 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
         );
       } else {
         const response = await databases.createDocument(
-          STAGING_DATABASE_ID,
-          CONTACT_ID,
+          databaseId,
+          collectionId,
           "unique()",
           {
             companyWebsite,
@@ -401,6 +406,7 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
             </span>
           </div>
         ) : (
+          ! isStartupRoute && (
           <div
             onClick={handleEdit}
             className="cursor-pointer border border-gray-300 rounded-full p-1 flex items-center space-x-1 mb-1"
@@ -408,6 +414,7 @@ const ContactInformation: React.FC<ContactInformationProps> = ({ startupId, setI
             <EditIcon size={15} />
             <span className="text-xs">Edit</span>
           </div>
+          )
         )}
         </>
       </div>

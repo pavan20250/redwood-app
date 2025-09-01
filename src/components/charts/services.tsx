@@ -106,7 +106,6 @@ export function ServicesChart() {
     <Card>
       <CardHeader>
         <CardTitle>Startups by Services</CardTitle>
-        <CardDescription>Counts of Startups Using Each Service</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig}>

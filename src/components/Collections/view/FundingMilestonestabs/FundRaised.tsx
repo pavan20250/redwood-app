@@ -6,8 +6,8 @@ import { InfoIcon, PlusCircle, Trash2, UploadCloud } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Storage, ID } from "appwrite";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID, PROJECT_ID, API_ENDPOINT, PROJECTS_ID } from "@/appwrite/config";
-import { databases, client } from "@/lib/utils";
+import { STAGING_DATABASE_ID, PROJECT_ID, API_ENDPOINT, PROJECTS_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { databases, client, useIsStartupRoute } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import ButtonWithIcon from "@/lib/addButton";
 
-const FUND_RAISED_ID = "6731e2fb000d9580025f";
+export const FUND_RAISED_ID = "6731e2fb000d9580025f";
 export const FUND_DOCUMENTS_ID = "6768e93900004c965d26";
 
 interface FundRaisedSoFarProps {
@@ -54,9 +54,15 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
   const storage = useMemo(() => new Storage(client), []);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [receivedDate, setReceivedDate] = useState<string | null>(null);
+  const isStartupRoute = useIsStartupRoute();
+
+
   const fetchInvestments = useCallback(async () => {
     try {
-      const response = await databases.listDocuments(STAGING_DATABASE_ID, FUND_RAISED_ID, [
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? FUND_RAISED_ID : FUND_RAISED_ID;
+      
+      const response = await databases.listDocuments(databaseId, collectionId, [
         Query.equal("startupId", startupId),
       ]);
       setInvestments(response.documents as Investment[]);
@@ -68,7 +74,7 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
         variant: "destructive",
       });
     }
-  }, [startupId, toast]);
+  }, [startupId, toast, isStartupRoute]);
 
   const fetchReceivedDate = useCallback(async () => {
     try {
@@ -92,12 +98,12 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
   
 
   useEffect(() => {
-  const fetchData = async () => {
-    await fetchReceivedDate();
-    await fetchInvestments(); 
-  };
-  fetchData();
-}, [fetchReceivedDate, fetchInvestments]);
+    const fetchData = async () => {
+      await fetchReceivedDate();
+      await fetchInvestments(); 
+    };
+    fetchData();
+  }, [fetchReceivedDate, fetchInvestments]);
 
   useEffect(() => {
     if (hasUnsavedChanges) {
@@ -111,15 +117,7 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
     if (!selectedInvestment) return;
 
     const modeToSave = selectedInvestment.mode === "Other" ? otherMode : selectedInvestment.mode;
-    
-    if (!selectedInvestment.date) {
-      toast({
-        title: "Error",
-        description: "Investment date is required.",
-        variant: "destructive",
-      });
-      return;
-    }
+
     if (!selectedInvestment.mode) {
       toast({
         title: "Error",
@@ -322,7 +320,9 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
       <div className="flex">
         <h3 className="container text-lg font-medium mb-2 -mt-4">Funds Raised So Far</h3>
         <div className="justify-end" onClick={() => openDialog()}>
+          { !isStartupRoute && (
           <ButtonWithIcon label="Add" />
+          )}
         </div>
       </div>
       <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">
@@ -458,7 +458,7 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
                   </div>
                 )}
               <div>
-                <Label>Investment Date<span className="text-red-500">*</span></Label>
+                <Label>Investment Date</Label>
                 <Input
                   type="date"
                   max={receivedDate || new Date().toISOString().split('T')[0]}
@@ -469,9 +469,8 @@ const FundRaisedSoFar: React.FC<FundRaisedSoFarProps> = ({ startupId, setIsDirty
                       date: e.target.value,
                     } as Investment);
                     setHasUnsavedChanges(true);
-                  }}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-blue-500 focus:border-blue-500"
-                />
+                  }} 
+                  />
               </div>
               <div>
                 <Label>Investment Amount (INR)<span className="text-red-500">*</span></Label>

@@ -22,8 +22,8 @@ import {
   DialogTrigger
 } from "@/components/ui/dialog";
 import { Query } from "appwrite";
-import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID } from "@/appwrite/config";
-import { client, databases } from "@/lib/utils";
+import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { client, databases, useIsStartupRoute } from "@/lib/utils";
 import { Storage } from "appwrite";
 import {
   Select,
@@ -72,6 +72,8 @@ const ShareholderPage: React.FC<ShareholdersProps> = ({ startupId, setIsDirty })
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const isStartupRoute = useIsStartupRoute();
+
 
   useEffect(() => {
     if (hasUnsavedChanges) {
@@ -83,9 +85,12 @@ const ShareholderPage: React.FC<ShareholdersProps> = ({ startupId, setIsDirty })
 
   const fetchData = useCallback(async () => {
     try {
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? SHAREHOLDERS_ID : SHAREHOLDERS_ID;
+
       const response = await databases.listDocuments(
-        STAGING_DATABASE_ID,
-        SHAREHOLDERS_ID,
+        databaseId,
+        collectionId,
         [Query.equal("startupId", startupId)]
       );
       const shareholders = response.documents.map((doc) => ({
@@ -96,7 +101,7 @@ const ShareholderPage: React.FC<ShareholdersProps> = ({ startupId, setIsDirty })
     } catch (error) {
       console.error("Error fetching data:", error);
     }
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   useEffect(() => {
     if (startupId) fetchData();
@@ -394,7 +399,9 @@ const ShareholderPage: React.FC<ShareholdersProps> = ({ startupId, setIsDirty })
           <DialogTrigger asChild>
             <button>
               <div className="relative group">
+                { !isStartupRoute && (
                 <ButtonWithIcon label="Add" />
+                )}
               </div>
             </button>
           </DialogTrigger>

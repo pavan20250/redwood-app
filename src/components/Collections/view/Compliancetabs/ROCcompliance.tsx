@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Table,
   TableBody,
@@ -11,9 +11,9 @@ import {
   TableHead,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Query } from "appwrite";
-import { STAGING_DATABASE_ID, STARTUP_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { ID, Query } from "appwrite";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE, STARTUP_ID } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +34,8 @@ import {
 } from "@/components/ui/select";
 import { SHAREHOLDERS_ID } from "../FundingMilestonestabs/Shareholders";
 import { ChevronRightIcon } from "lucide-react";
-const ROC_ID = "6739c2c40032254ca4b6";
+
+export const ROC_ID = "6739c2c40032254ca4b6";
 export const FORMS_ID = "67b45189001e40764c83";
 
 interface RocComplianceProps {
@@ -83,7 +84,11 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
   const [selectedAssociatedCompany, setSelectedAssociatedCompany] = useState<string>("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showAssociatedCompaniesTable, setShowAssociatedCompaniesTable] = useState(false);
+  const isStartupRoute = useIsStartupRoute();
 
+  const [rocChecklistGenerated, setRocChecklistGenerated] = useState<boolean | null>(null);
+  const hasRunChecklist = useRef(false);
+  const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
 
   useEffect(() => {
     if (hasUnsavedChanges) {
@@ -97,9 +102,12 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
   useEffect(() => {
     const fetchComplianceData = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? ROC_ID : ROC_ID;
+
         const response = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          ROC_ID,
+          databaseId,
+          collectionId,
           [Query.equal("startupId", startupId)]
         );
         const filteredDocuments = response.documents.map((doc) => {
@@ -114,6 +122,7 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
           startupId
         );
         setNatureOfCompany(startupResponse.natureOfCompany);
+        setRocChecklistGenerated(startupResponse.rocChecklistGenerated ?? false);
       } catch (error) {
         console.error("Error fetching compliance data:", error);
       }
@@ -140,7 +149,7 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
     };
     fetchShareholders();
     fetchComplianceData();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   // Fetch dynamic query options based on natureOfCompany
   useEffect(() => {
@@ -164,6 +173,68 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
     };
     fetchQueryOptions();
   }, [natureOfCompany]);
+
+  // --- MAIN LOGIC: Auto-generate ROC checklist ---
+  useEffect(() => {
+    const generateRocChecklistIfNeeded = async () => {
+      if (
+        rocChecklistGenerated === false &&
+        !hasRunChecklist.current &&
+        natureOfCompany &&
+        queryOptions.length > 0
+      ) {
+        hasRunChecklist.current = true;
+        setIsGeneratingChecklist(true);
+        // Identify missing queries
+        const missing = queryOptions.filter(
+          (query) => !complianceData.some((doc) => doc.query === query)
+        );
+
+        // Create missing docs
+        for (const query of missing) {
+          await databases.createDocument(
+            STAGING_DATABASE_ID,
+            ROC_ID,
+            ID.unique(),
+            {
+              startupId,
+              query,
+              yesNo: "",
+              date: "",
+              description: "",
+            }
+          );
+        }
+
+        // Mark checklist as generated in Startups collection
+        await databases.updateDocument(
+          STAGING_DATABASE_ID,
+          STARTUP_ID,
+          startupId,
+          { rocChecklistGenerated: true }
+        );
+        setRocChecklistGenerated(true);
+
+        // Refresh compliance data
+        const response = await databases.listDocuments(
+          STAGING_DATABASE_ID,
+          ROC_ID,
+          [Query.equal("startupId", startupId)]
+        );
+        setComplianceData(response.documents);
+        setIsGeneratingChecklist(false);
+      }
+      
+    };
+    generateRocChecklistIfNeeded();
+  }, [
+    rocChecklistGenerated,
+    natureOfCompany,
+    queryOptions,
+    complianceData,
+    startupId,
+  ]);
+  // --- END MAIN LOGIC ---
 
   // Function to get description based on yesNo value
   const getDescriptionForYesNo = (
@@ -246,64 +317,6 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
     }
   };
 
-  const handleGenerateDocuments = async () => {
-    if (!queryOptions.length) {
-      console.warn("No query options available to generate documents.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      // Identify missing documents
-      const missing = queryOptions.filter(
-        (query) => !complianceData.some((doc) => doc.query === query)
-      );
-      setMissingDocuments(missing);
-
-      for (const query of missing) {
-        const defaultYesNo = "";
-        const defaultDate = "";
-        const defaultDescription = "";
-
-        await databases.createDocument(
-          STAGING_DATABASE_ID,
-          ROC_ID,
-          "unique()",
-          {
-            startupId: startupId,
-            query: query,
-            yesNo: defaultYesNo,
-            date: defaultDate,
-            description: defaultDescription,
-          }
-        );
-      }
-
-      // After generating documents, refresh the compliance data
-      const fetchComplianceData = async () => {
-        try {
-          const response = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            ROC_ID,
-            [Query.equal("startupId", startupId)]
-          );
-          const filteredDocuments = response.documents.map((doc) => {
-            const { $id, query, yesNo, date, description } = doc;
-            return { $id, query, yesNo, date, description };
-          });
-          setComplianceData(filteredDocuments);
-        } catch (error) {
-          console.error("Error fetching compliance data:", error);
-        }
-      };
-      await fetchComplianceData();
-
-      console.log("Documents generated successfully.");
-    } catch (error) {
-      console.error("Error generating documents:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
   // Determine if all documents are created
   const allDocumentsCreated =
     queryOptions.length > 0 &&
@@ -440,14 +453,10 @@ const RocCompliance: React.FC<RocComplianceProps> = ({ startupId, setIsDirty }) 
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-2 p-2">
           <h3 className="text-lg font-medium">ROC Compliance</h3>
-          {!allDocumentsCreated && (
-            <Button
-              onClick={handleGenerateDocuments}
-              disabled={isSubmitting}
-              variant={"outline"}
-            >
-              {isSubmitting ? "Generating..." : "Generate Queries"}
-            </Button>
+          {isGeneratingChecklist && (
+            <span className="text-sm text-gray-500 border border-gray-50 p-1">
+              generating queries..
+            </span>
           )}
         </div>
       </div>

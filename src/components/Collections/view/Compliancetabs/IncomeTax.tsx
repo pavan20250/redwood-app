@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Table,
   TableBody,
@@ -11,9 +11,9 @@ import {
   TableHead,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { Query } from "appwrite";
-import { STAGING_DATABASE_ID, STARTUP_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { ID, Query } from "appwrite";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE, STARTUP_ID } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/select";
 import { FORMS_ID } from "./ROCcompliance";
 
-const INCOME_TAX_TABLE_ID = "6736e636001bd105c8c8";
+export const INCOME_TAX_TABLE_ID = "6736e636001bd105c8c8";
 
 interface IncomeTaxComplianceProps {
   startupId: string;
@@ -52,11 +52,19 @@ const IncomeTaxCompliance: React.FC<IncomeTaxComplianceProps> = ({ startupId, se
   const [missingDocuments, setMissingDocuments] = useState<string[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
+  const isStartupRoute = useIsStartupRoute();
+  const [itChecklistGenerated, setItChecklistGenerated] = useState<boolean | null>(null);
+  const hasRunChecklist = useRef(false);
+  const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
+
 
   useEffect(() => {
     const fetchComplianceData = async () => {
       try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, INCOME_TAX_TABLE_ID, [
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? INCOME_TAX_TABLE_ID : INCOME_TAX_TABLE_ID;
+
+        const response = await databases.listDocuments(databaseId, collectionId, [
           Query.equal("startupId", startupId),
         ]);
         const filteredDocuments = response.documents.map(doc => {
@@ -71,12 +79,13 @@ const IncomeTaxCompliance: React.FC<IncomeTaxComplianceProps> = ({ startupId, se
           startupId
         );
         setNatureOfCompany(startupResponse.natureOfCompany);
+        setItChecklistGenerated(startupResponse.itChecklistGenerated ?? false);
       } catch (error) {
         console.error("Error fetching compliance data:", error);
       }
     };
     fetchComplianceData();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   useEffect(() => {
     const fetchQueryOptions = async () => {
@@ -103,6 +112,71 @@ const IncomeTaxCompliance: React.FC<IncomeTaxComplianceProps> = ({ startupId, se
       setIsDirty(false);
     }
   }, [hasUnsavedChanges, setIsDirty]);
+
+  // --- MAIN LOGIC: Auto-generate IT checklist ---
+  useEffect(() => {
+    const generateITChecklistIfNeeded = async () => {
+      if (
+        itChecklistGenerated === false &&
+        !hasRunChecklist.current &&
+        natureOfCompany &&
+        queryOptions.length > 0
+      ) {
+        hasRunChecklist.current = true;
+        setIsGeneratingChecklist(true);
+        // Identify missing queries
+        const missing = queryOptions.filter(
+          (query) => !complianceData.some((doc) => doc.query === query)
+        );
+
+        // Create missing docs
+        for (const query of missing) {
+          await databases.createDocument(
+            STAGING_DATABASE_ID,
+            INCOME_TAX_TABLE_ID,
+            ID.unique(),
+            {
+              startupId,
+              query,
+              yesNo: "",
+              date: "",
+              description: "",
+            }
+          );
+        }
+
+        // Mark checklist as generated in Startups collection
+        await databases.updateDocument(
+          STAGING_DATABASE_ID,
+          STARTUP_ID,
+          startupId,
+          { itChecklistGenerated: true }
+        );
+        setItChecklistGenerated(true);
+
+        // Refresh compliance data
+        const response = await databases.listDocuments(
+          STAGING_DATABASE_ID,
+          INCOME_TAX_TABLE_ID,
+          [Query.equal("startupId", startupId)]
+        );
+        const filteredDocuments = response.documents.map(doc => {
+          const { $id, query, yesNo, date, description } = doc;
+          return { $id, query, yesNo, date, description };
+        });
+        setComplianceData(filteredDocuments);
+        setIsGeneratingChecklist(false);
+      }
+    };
+    generateITChecklistIfNeeded();
+  }, [
+    itChecklistGenerated,
+    natureOfCompany,
+    queryOptions,
+    complianceData,
+    startupId,
+  ]);
+  // --- END MAIN LOGIC ---
 
   const getDescriptionForYesNo = (yesNoValue: string, queryValue: string): string => {
     const formData = formsData.find((doc) => doc.query === queryValue);
@@ -161,65 +235,6 @@ const IncomeTaxCompliance: React.FC<IncomeTaxComplianceProps> = ({ startupId, se
     }
   };
 
-  const handleGenerateDocuments = async () => {
-    if (!queryOptions.length) {
-      console.warn("No query options available to generate documents.");
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      // Identify missing documents
-      const missing = queryOptions.filter(
-        (query) => !complianceData.some((doc) => doc.query === query)
-      );
-      setMissingDocuments(missing);
-
-      for (const query of missing) {
-        const defaultYesNo = "";
-        const defaultDate = "";
-        const defaultDescription = "";
-
-        await databases.createDocument(
-          STAGING_DATABASE_ID,
-          INCOME_TAX_TABLE_ID,
-          "unique()",
-          {
-            startupId: startupId,
-            query: query,
-            yesNo: defaultYesNo,
-            date: defaultDate,
-            description: defaultDescription,
-          }
-        );
-      }
-
-      // After generating documents, refresh the compliance data
-      const fetchComplianceData = async () => {
-        try {
-          const response = await databases.listDocuments(STAGING_DATABASE_ID, INCOME_TAX_TABLE_ID, [
-            Query.equal("startupId", startupId),
-          ]);
-          const filteredDocuments = response.documents.map((doc) => {
-            const { $id, query, yesNo, date, description } = doc;
-            return { $id, query, yesNo, date, description };
-          });
-          setComplianceData(filteredDocuments);
-        } catch (error) {
-          console.error("Error fetching compliance data:", error);
-        }
-      };
-      await fetchComplianceData();
-
-      console.log("Documents generated successfully.");
-    } catch (error) {
-      console.error("Error generating documents:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   // Determine if all documents are created
   const allDocumentsCreated =
     queryOptions.length > 0 &&
@@ -246,14 +261,10 @@ const IncomeTaxCompliance: React.FC<IncomeTaxComplianceProps> = ({ startupId, se
     <div>
       <div className="flex items-center space-x-2 p-2">
         <h3 className="text-lg font-medium">Income Tax Compliance</h3>
-        {!allDocumentsCreated && (
-            <Button
-              onClick={handleGenerateDocuments}
-              disabled={isSubmitting}
-              variant={"outline"}
-            >
-              {isSubmitting ? "Generating..." : "Generate Queries"}
-            </Button>
+        {isGeneratingChecklist && (
+            <span className="text-sm text-gray-500 border border-gray-50 p-1">
+              generating queries..
+            </span>
           )}
       </div>
       <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/accordion";
 import { EditIcon, SaveIcon, XIcon } from "lucide-react";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
 import { databases, useIsStartupRoute } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
@@ -56,31 +56,41 @@ const AboutBusiness: React.FC<AboutBusinessProps> = ({ startupId, setIsDirty }) 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? ABOUT_COLLECTION_ID : ABOUT_COLLECTION_ID;
+
         const response = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          ABOUT_COLLECTION_ID,
+          databaseId,
+          collectionId,
           [Query.equal("startupId", startupId)]
         );
-
         if (response.documents.length > 0) {
           const document = response.documents[0];
           setData(document);
           setOriginalData(document);
           setDocumentId(document.$id);
         } else {
-          setData({});
-          setOriginalData({});
+          const emptyData: DataType = {};
+          fields.forEach(f => emptyData[f.id] = "");
+          setData(emptyData);
+          setOriginalData(emptyData);
+          setDocumentId(null);
         }
       } catch (error) {
         console.error("Error fetching data:", error);
         toast({ variant: "destructive", title: "Failed to fetch About Business data." });
+        const emptyData: DataType = {};
+        fields.forEach(f => emptyData[f.id] = "");
+        setData(emptyData);
+        setOriginalData(emptyData);
+        setDocumentId(null);
       }
     };
 
     if (startupId) {
       fetchData();
     }
-  }, [startupId, toast]);
+  }, [startupId, toast, isStartupRoute]);
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -96,12 +106,15 @@ const AboutBusiness: React.FC<AboutBusinessProps> = ({ startupId, setIsDirty }) 
     try {
       const { $id, $databaseId, $collectionId, ...userDefinedData } = data;
 
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? ABOUT_COLLECTION_ID : ABOUT_COLLECTION_ID;
+
       if (documentId) {
-        await databases.updateDocument(STAGING_DATABASE_ID, ABOUT_COLLECTION_ID, documentId, userDefinedData);
+        await databases.updateDocument(databaseId, collectionId, documentId, userDefinedData);
       } else {
         const response = await databases.createDocument(
-          STAGING_DATABASE_ID,
-          ABOUT_COLLECTION_ID,
+          databaseId,
+          collectionId,
           "unique()",
           { ...userDefinedData, startupId }
         );
@@ -195,6 +208,7 @@ const AboutBusiness: React.FC<AboutBusinessProps> = ({ startupId, setIsDirty }) 
             </button>
           </div>
         ) : (
+          ! isStartupRoute && (
           <button
             onClick={handleEdit}
             className="flex items-center gap-1 border border-gray-300 rounded-full px-2 py-1 text-xs hover:bg-gray-100"
@@ -202,6 +216,7 @@ const AboutBusiness: React.FC<AboutBusinessProps> = ({ startupId, setIsDirty }) 
             <EditIcon size={15} />
             Edit
           </button>
+          )
         )}
       </div>
 

@@ -38,6 +38,8 @@
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "framer-motion": "^11.3.31",
+    "highcharts": "^12.2.0",
+    "highcharts-react-official": "^3.2.2",
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
@@ -46,6 +48,7 @@
     "next": "14.2.7",
     "next-themes": "^0.4.4",
     "node-appwrite": "^14.1.0",
+    "nodemailer": "^7.0.3",
     "npm-upgrade": "^3.1.0",
     "punycode": "^2.3.1",
     "react": "^18",
@@ -69,7 +72,9 @@
     "uuid": "^10.0.0"
   },
   "devDependencies": {
+    "@types/highcharts": "^7.0.0",
     "@types/node": "^20",
+    "@types/nodemailer": "^6.4.17",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/uuid": "^10.0.0",

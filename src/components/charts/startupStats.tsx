@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Query } from "appwrite";
 import { STAGING_DATABASE_ID, STARTUP_ID, PROJECTS_ID } from "@/appwrite/config";
@@ -25,77 +25,104 @@ const StartupStats: React.FC<StartupStatsProps> = ({ showInvestmentCard }) => {
   const [totalProjects, setTotalProjects] = useState<number>(0);
   const router = useRouter();
 
-  useEffect(() => {
-    const fetchStartupCount = async () => {
+  const fetchStartupCount = async () => {
+    try {
+      const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID);
+      setStartupCount(response.total);
+    } catch (error) {
+      console.error("Error fetching startups count:", error);
+    }
+  };
 
-      try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, STARTUP_ID);
-        setStartupCount(response.total);
-      } catch (error) {
-        console.error("Error fetching startups count:", error);
-      }
-    };
-    // Fetch counts for specific statuses
-    const fetchStatusCounts = async () => {
-      try {
-        // Pipeline
-        const pipelineResponse = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          PROJECTS_ID,
-          [Query.equal("startupStatus", "Pipeline")]
-        );
-        setPipelineCount(pipelineResponse.total);
+  const fetchStatusCounts = async () => {
+    try {
+      // Pipeline
+      const pipelineResponse = await databases.listDocuments(
+        STAGING_DATABASE_ID,
+        PROJECTS_ID,
+        [Query.equal("startupStatus", "Pipeline")]
+      );
+      setPipelineCount(pipelineResponse.total);
 
-        // Rejected
-        const rejectedResponse = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          PROJECTS_ID,
-          [Query.equal("startupStatus", "Rejected")]
-        );
-        setRejectedCount(rejectedResponse.total);
+      // Rejected
+      const rejectedResponse = await databases.listDocuments(
+        STAGING_DATABASE_ID,
+        PROJECTS_ID,
+        [Query.equal("startupStatus", "Rejected")]
+      );
+      setRejectedCount(rejectedResponse.total);
 
-        // Completed
-        const completedResponse = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          PROJECTS_ID,
-          [Query.equal("startupStatus", "Completed")]
-        );
-        setCompletedCount(completedResponse.total);
-      } catch (error) {
-        console.error("Error fetching status counts:", error);
-      }
-    };
+      // Completed
+      const completedResponse = await databases.listDocuments(
+        STAGING_DATABASE_ID,
+        PROJECTS_ID,
+        [Query.equal("startupStatus", "Completed")]
+      );
+      setCompletedCount(completedResponse.total);
+    } catch (error) {
+      console.error("Error fetching status counts:", error);
+    }
+  };
 
-    const fetchTotalInvestment = async () => {
-      try {
-        const FUND_RAISED_ID = "6731e2fb000d9580025f";
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, FUND_RAISED_ID);
+  const fetchTotalInvestment = async () => {
+    try {
+      const FUND_RAISED_ID = "6731e2fb000d9580025f";
+      const response = await databases.listDocuments(STAGING_DATABASE_ID, FUND_RAISED_ID);
 
-        const totalAmount = response.documents.reduce((sum: number, doc: any) => {
-          const amount = parseFloat(doc.amount.replace(/[^0-9.-]+/g, ""));
-          return sum + (isNaN(amount) ? 0 : amount);
-        }, 0);
+      const totalAmount = response.documents.reduce((sum: number, doc: any) => {
+        const amount = parseFloat(doc.amount.replace(/[^0-9.-]+/g, ""));
+        return sum + (isNaN(amount) ? 0 : amount);
+      }, 0);
 
-        setTotalInvestment(totalAmount);
-      } catch (error) {
-        console.error("Error fetching total investment:", error);
-      }
-    };
+      setTotalInvestment(totalAmount);
+    } catch (error) {
+      console.error("Error fetching total investment:", error);
+    }
+  };
 
-    const fetchTotalProjects = async () => {
-      try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, PROJECTS_ID);
-        setTotalProjects(response.total);
-      } catch (error) {
-        console.error("Error fetching total projects:", error);
-      }
-    };
+  const fetchTotalProjects = async () => {
+    try {
+      const response = await databases.listDocuments(STAGING_DATABASE_ID, PROJECTS_ID);
+      setTotalProjects(response.total);
+    } catch (error) {
+      console.error("Error fetching total projects:", error);
+    }
+  };
 
+  const fetchAllData = useCallback(() => {
     fetchStartupCount();
     fetchStatusCounts();
     fetchTotalInvestment();
     fetchTotalProjects();
   }, []);
+
+  useEffect(() => {
+    fetchAllData();
+
+    // Listen for data changes
+    const handleStartupDataChange = () => {
+      fetchStartupCount();
+    };
+
+    const handleProjectDataChange = () => {
+      fetchStatusCounts();
+      fetchTotalProjects();
+    };
+
+    const handleFundRaisedDataChange = () => {
+      fetchTotalInvestment();
+    };
+
+    window.addEventListener('startupDataChanged', handleStartupDataChange);
+    window.addEventListener('projectDataChanged', handleProjectDataChange);
+    window.addEventListener('fundRaisedDataChanged', handleFundRaisedDataChange);
+
+    return () => {
+      window.removeEventListener('startupDataChanged', handleStartupDataChange);
+      window.removeEventListener('projectDataChanged', handleProjectDataChange);
+      window.removeEventListener('fundRaisedDataChanged', handleFundRaisedDataChange);
+    };
+  }, [fetchAllData]);
 
   // Calculate the number of cards dynamically
   const statCards = [
@@ -174,6 +201,7 @@ const StartupStats: React.FC<StartupStatsProps> = ({ showInvestmentCard }) => {
       title="Pipeline Projects"
       mainValue={`+${pipelineCount}`}
       subValue="+0% from last month"
+      onClick={() => router.push("/home/pipeline/Pipeline")}
       icon={
         <svg
           className="w-6 h-5 text-blue-500"
@@ -196,6 +224,7 @@ const StartupStats: React.FC<StartupStatsProps> = ({ showInvestmentCard }) => {
       title="Rejected Projects"
       mainValue={`+${rejectedCount}`}
       subValue="+0% from last year"
+      onClick={() => router.push("/home/RejectedProjects/RejectedProjects")}
       icon={
         <svg
           className="w-6 h-5 text-red-500"
@@ -218,6 +247,7 @@ const StartupStats: React.FC<StartupStatsProps> = ({ showInvestmentCard }) => {
       title="Completed Projects"
       mainValue={`+${completedCount}`}
       subValue="+0 since last year"
+      onClick={() => router.push("/home/CompletedProjects/CompletedProjects")}
       icon={
         <svg
           className="w-6 h-5 text-green-500"

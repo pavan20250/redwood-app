@@ -5,8 +5,8 @@ import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow, Table
 import { Textarea } from "@/components/ui/textarea";
 import { PlusCircle } from "lucide-react";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ButtonWithIcon from "@/lib/addButton";
 
-const INCUBATION_ID = "673c2945001eddd9aea3";
+export const INCUBATION_ID = "673c2945001eddd9aea3";
 
 interface IncubationProps {
   startupId: string;
@@ -36,11 +36,15 @@ const Incubation: React.FC<IncubationProps> = ({ startupId }) => {
     spocEmail: "",
     description: "",
   });
+  const isStartupRoute = useIsStartupRoute();
 
   useEffect(() => {
     const fetchIncubationData = async () => {
       try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, INCUBATION_ID, [
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? INCUBATION_ID : INCUBATION_ID;
+
+        const response = await databases.listDocuments(databaseId, collectionId, [
           Query.equal("startupId", startupId),
         ]);
         const filteredDocuments = response.documents.map(doc => {
@@ -53,7 +57,7 @@ const Incubation: React.FC<IncubationProps> = ({ startupId }) => {
       }
     };
     fetchIncubationData();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   const handleSaveIncubation = async () => {
     if (isSubmitting) return;
@@ -127,7 +131,9 @@ const Incubation: React.FC<IncubationProps> = ({ startupId }) => {
     <div>
       <div className="flex justify-between items-center">
         <h3 className="container text-lg font-medium mb-2 -mt-4">Incubation</h3>
+        { !isStartupRoute && (
         <ButtonWithIcon label="Add" onClick={() => setIsDialogOpen(true)} />
+        )}
       </div>
       <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">
         <Table>

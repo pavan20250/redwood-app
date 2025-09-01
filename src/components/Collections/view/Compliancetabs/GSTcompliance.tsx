@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { Query } from "appwrite";
-import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID } from "@/appwrite/config";
-import { client, databases } from "@/lib/utils";
+import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID, STARTUP_DATABASE, STARTUP_ID } from "@/appwrite/config";
+import { client, databases, useIsStartupRoute } from "@/lib/utils";
 import { ID, Storage, Databases } from "appwrite";
 
 import {
@@ -40,7 +40,7 @@ import { Trash2, UploadCloud } from "lucide-react";
 import { FaEye } from "react-icons/fa";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-const GST_ID = "6739ce42002b5b5036a8";
+export const GST_ID = "6739ce42002b5b5036a8";
 export const MISC_COLLECTION_ID = "6810ae530025f9307c3b";
 
 interface GstComplianceProps {
@@ -67,13 +67,21 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
   const [gstNumber, setGstNumber] = useState<string>("");
   const [gstDocId, setGstDocId] = useState<string | null>(null);
   const debounceTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const isStartupRoute = useIsStartupRoute();
+  const [gstChecklistGenerated, setGstChecklistGenerated] = useState<boolean | null>(null);
+  const hasRunChecklist = useRef(false);
+  const [isGeneratingChecklist, setIsGeneratingChecklist] = useState(false);
   
   useEffect(() => {
     const fetchComplianceData = async () => {
       try {
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? GST_ID : GST_ID;
+
         const response = await databases.listDocuments(
-          STAGING_DATABASE_ID,
-          GST_ID,
+          databaseId,
+          collectionId,
           [Query.equal("startupId", startupId)]
         );
         const filteredDocuments = response.documents.map((doc) => {
@@ -81,12 +89,19 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
           return { $id, query, yesNo, date, description };
         });
         setComplianceData(filteredDocuments);
+
+        const startupResponse = await databases.getDocument(
+          STAGING_DATABASE_ID,
+          STARTUP_ID,
+          startupId
+        );
+        setGstChecklistGenerated(startupResponse.gstChecklistGenerated ?? false);
       } catch (error) {
         console.error("Error fetching compliance data:", error);
       }
     };
     fetchComplianceData();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
 
   // Fetch dynamic query options
   useEffect(() => {
@@ -115,6 +130,69 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
     }
   }, [hasUnsavedChanges, setIsDirty]);
 
+  // --- MAIN LOGIC: Auto-generate GST checklist if needed ---
+  useEffect(() => {
+    const generateGstChecklistIfNeeded = async () => {
+      if (
+        gstChecklistGenerated === false &&
+        !hasRunChecklist.current &&
+        queryOptions.length > 0
+      ) {
+        hasRunChecklist.current = true;
+        setIsGeneratingChecklist(true);
+        // Identify missing queries
+        const missing = queryOptions.filter(
+          (query) => !complianceData.some((doc) => doc.query === query)
+        );
+
+        // Create missing docs
+        for (const query of missing) {
+          await databases.createDocument(
+            STAGING_DATABASE_ID,
+            GST_ID,
+            ID.unique(),
+            {
+              startupId,
+              query,
+              yesNo: "",
+              date: "",
+              description: "",
+            }
+          );
+        }
+
+        // Mark checklist as generated in Startups collection
+        await databases.updateDocument(
+          STAGING_DATABASE_ID,
+          STARTUP_ID,
+          startupId,
+          { gstChecklistGenerated: true }
+        );
+        setGstChecklistGenerated(true);
+
+        // Refresh compliance data
+        const response = await databases.listDocuments(
+          STAGING_DATABASE_ID,
+          GST_ID,
+          [Query.equal("startupId", startupId)]
+        );
+        const filteredDocuments = response.documents.map((doc) => {
+          const { $id, query, yesNo, date, description } = doc;
+          return { $id, query, yesNo, date, description };
+        });
+        setComplianceData(filteredDocuments);
+        setIsGeneratingChecklist(false);
+      }
+    };
+    generateGstChecklistIfNeeded();
+  }, [
+    gstChecklistGenerated,
+    queryOptions,
+    complianceData,
+    startupId,
+  ]);
+  // --- END MAIN LOGIC ---
+
   // Function to get description based on yesNo value
   const getDescriptionForYesNo = (
     yesNoValue: string,
@@ -127,7 +205,7 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
       Array.isArray(formData.yesNo) &&
       formData.yesNo.length > 0
     ) {
-      const index = yesNoValue === "yes" ? 0 : 1;
+      const index = yesNoValue === "Yes" ? 0 : 1;
       return formData.yesNo[index] || ""; // Return corresponding description
     }
     return "";
@@ -194,65 +272,6 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
         description: description,
       });
       setHasUnsavedChanges(true);
-    }
-  };
-
-  const handleGenerateDocuments = async () => {
-    if (!queryOptions.length) {
-      console.warn("No query options available to generate documents.");
-      return;
-    }
-    setIsSubmitting(true);
-
-    try {
-      const missing = queryOptions.filter(
-        (query) => !complianceData.some((doc) => doc.query === query)
-      );
-      setMissingDocuments(missing);
-
-      for (const query of missing) {
-        const defaultYesNo = "";
-        const defaultDate = "";
-        const defaultDescription = "";
-
-        await databases.createDocument(
-          STAGING_DATABASE_ID,
-          GST_ID,
-          "unique()",
-          {
-            startupId: startupId,
-            query: query,
-            yesNo: defaultYesNo,
-            date: defaultDate,
-            description: defaultDescription,
-          }
-        );
-      }
-
-      // After generating documents, refresh the compliance data
-      const fetchComplianceData = async () => {
-        try {
-          const response = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            GST_ID,
-            [Query.equal("startupId", startupId)]
-          );
-          const filteredDocuments = response.documents.map((doc) => {
-            const { $id, query, yesNo, date, description } = doc;
-            return { $id, query, yesNo, date, description };
-          });
-          setComplianceData(filteredDocuments);
-        } catch (error) {
-          console.error("Error fetching compliance data:", error);
-        }
-      };
-      await fetchComplianceData();
-
-      console.log("Documents generated successfully.");
-    } catch (error) {
-      console.error("Error generating documents:", error);
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -449,24 +468,16 @@ const GstCompliance: React.FC<GstComplianceProps> = ({ startupId, setIsDirty }) 
       saveGstNumber(value);
     }, 500); // 500ms debounce
   };
-  
-  
-  
+
 
   return (
     <div>
       <div className="flex items-center space-x-2 p-2">
-        <h3 className="text-lg font-medium">
-          GST Compliance
-        </h3>
-          {!allDocumentsCreated && (
-            <Button
-              onClick={handleGenerateDocuments}
-              disabled={isSubmitting}
-              variant={"outline"}
-            >
-              {isSubmitting ? "Generating..." : "Generate Documents"}
-            </Button>
+        <h3 className="text-lg font-medium">GST Compliance</h3>
+        {isGeneratingChecklist && (
+            <span className="text-sm text-gray-500 border border-gray-50 p-1">
+              generating queries..
+            </span>
           )}
       </div>
       <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">

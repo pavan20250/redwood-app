@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table";
 import { Query } from "appwrite";
-import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID } from "@/appwrite/config";
-import { client, databases } from "@/lib/utils";
+import { API_ENDPOINT, PROJECT_ID, STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { client, databases, useIsStartupRoute } from "@/lib/utils";
 import { Storage, ID } from "appwrite";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,8 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
   const [editingRow, setEditingRow] = useState<any | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSaved, setShowSaved] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   const[isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -63,20 +65,29 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
   const storage = useMemo(() => new Storage(client), []);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaveButtonDisabled, setIsSaveButtonDisabled] = useState(true);
+  const isStartupRoute = useIsStartupRoute();
 
-  const fetchAllTables = useCallback(async () => {
+
+  const fetchAllTables = useCallback(async (isInitialLoad = false) => {
     try {
+      if (isInitialLoad) {
+        setIsInitialLoading(true);
+      }
+      const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+      const collectionId = isStartupRoute ? CAP_TABLE_COUNT_ID : CAP_TABLE_COUNT_ID;
       const tablesResponse = await databases.listDocuments(
-        STAGING_DATABASE_ID,
-        CAP_TABLE_COUNT_ID,
+        databaseId,
+        collectionId,
         [Query.equal("startupId", startupId)]
       );
 
       const tablesData = await Promise.all(
         tablesResponse.documents.map(async (tableDoc) => {
+          const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+          const collectionId = isStartupRoute ? CAP_TABLE_ID : CAP_TABLE_ID;
           const rowsResponse = await databases.listDocuments(
-            STAGING_DATABASE_ID,
-            CAP_TABLE_ID,
+            databaseId,
+            collectionId,
             [
               Query.equal("startupId", startupId),
               Query.equal("tableId", tableDoc.tableId)
@@ -105,11 +116,15 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
       }
     } catch (error) {
       console.error("Error fetching tables:", error);
+    } finally {
+      if (isInitialLoad) {
+        setIsInitialLoading(false);
+      }
     }
-  }, [startupId, activeTableId]);
+  }, [startupId, activeTableId, isStartupRoute]);
 
   useEffect(() => {
-    fetchAllTables();
+    fetchAllTables(true);
   }, [fetchAllTables]);
 
   useEffect(() => {
@@ -168,10 +183,10 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
   useEffect(() => {
     // Check if required fields are filled
     if (editingRow) {
-      const { shareholderName, type, role, shares, capitalStructure } =
+      const { shareholderName, type, role, capitalStructure } =
         editingRow;
       const requiredFieldsFilled =
-        !!shareholderName && !!type && !!role && !!shares && !!capitalStructure;
+        !!shareholderName && !!type && !!role && !!capitalStructure;
       setIsSaveButtonDisabled(!requiredFieldsFilled);
     } else {
       setIsSaveButtonDisabled(true);
@@ -183,7 +198,6 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
     setIsSubmitting(true);
     
     try {
-
       const table = tables.find(t => t.tableId === activeTableId);
       if (!table) return;
 
@@ -227,7 +241,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
         });
       }
 
-      fetchAllTables();
+      fetchAllTables(false);
       setIsDialogOpen(false);
       setEditingRow(null);
       setError(null);
@@ -244,7 +258,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
   const handleDeleteRow = async (id: string) => {
     try {
       await databases.deleteDocument(STAGING_DATABASE_ID, CAP_TABLE_ID, id);
-      fetchAllTables();
+      fetchAllTables(false);
       setIsDialogOpen(false);
       setEditingRow(null);
       setHasUnsavedChanges(false);
@@ -305,9 +319,19 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
           tableDoc.documents[0].$id,
           { ...table.formData, [field]: currentValue }
         );
+         toast({
+          title: "Saved",
+          description: "Your changes have been saved.",
+          duration: 2000,
+        });
       }
     } catch (error) {
       console.error("Error saving form:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save changes.",
+        variant: "destructive",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -327,7 +351,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
         fileId: uploadResponse.$id,
         fileName: file.name,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "Document upload successful",
         description: "Your document has been uploaded successfully!",
@@ -349,7 +373,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
         fileId: null,
         fileName: null,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "File deleted",
         description: "The file has been successfully deleted.",
@@ -373,7 +397,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
         fileId: uploadResponse.$id,
         fileName: file.name,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "Document upload successful",
         description: "Your document has been uploaded successfully!",
@@ -395,7 +419,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
         fileId: null,
         fileName: null,
       });
-      fetchAllTables();
+      fetchAllTables(false);
       toast({
         title: "File deleted",
         description: "The file has been successfully deleted.",
@@ -433,7 +457,9 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
             <h3 className="text-lg font-medium">Capital Table</h3>
+            { !isStartupRoute && (
             <ButtonWithIcon label="Add Round" onClick={handleAddNewTable} />
+            )}
         </div>
           <div className="flex gap-2 p-2">
             {tables.map(table => (
@@ -544,7 +570,7 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
                 }} />  
               </div>
               <div>
-                <Label htmlFor="shares">No of Shares<span className="text-red-500">*</span></Label>
+                <Label htmlFor="shares">No of Shares</Label>
                 <Input id="shares" type="number" placeholder="No of Shares" value={editingRow?.shares || ""} 
                 onChange={(e) => {
                   setEditingRow({ ...editingRow, shares: e.target.value });
@@ -619,7 +645,18 @@ const CapTable: React.FC<CapTableProps> = ({ startupId, setIsDirty }) => {
           </form>
         </DialogContent>
       </Dialog>
-      {activeTable && (
+      {isInitialLoading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+        </div>
+      ) : !activeTable ? (
+        <div className="flex flex-col items-center justify-center h-64 bg-white rounded-lg border border-gray-300">
+          <p className="text-lg text-gray-600 mb-4">No Capital Tables found</p>
+          {!isStartupRoute && (
+            <ButtonWithIcon label="Add New Table" onClick={handleAddNewTable} />
+          )}
+        </div>
+      ) : (
       <div className="bg-white p-1 shadow-md rounded-lg border border-gray-300">
       <div onClick={() => {
           setEditingRow({});

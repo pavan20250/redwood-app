@@ -5,8 +5,8 @@ import { Table, TableBody, TableCaption, TableCell, TableHeader, TableRow, Table
 import { Textarea } from "@/components/ui/textarea";
 import { PlusCircle } from "lucide-react";
 import { Query } from "appwrite";
-import { STAGING_DATABASE_ID } from "@/appwrite/config";
-import { databases } from "@/lib/utils";
+import { STAGING_DATABASE_ID, STARTUP_DATABASE } from "@/appwrite/config";
+import { databases, useIsStartupRoute } from "@/lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import ButtonWithIcon from "@/lib/addButton";
 
-const PATENTS_ID = "673add4700120ef26d13";
+export const PATENTS_ID = "673add4700120ef26d13";
 
 interface PatentsProps {
   startupId: string;
@@ -37,11 +37,15 @@ const Patents: React.FC<PatentsProps> = ({ startupId }) => {
     patentOffice: "",
     description: "",
   });
+  const isStartupRoute = useIsStartupRoute();
 
   useEffect(() => {
     const fetchPatentsData = async () => {
       try {
-        const response = await databases.listDocuments(STAGING_DATABASE_ID, PATENTS_ID, [
+        const databaseId = isStartupRoute ? STARTUP_DATABASE : STAGING_DATABASE_ID;
+        const collectionId = isStartupRoute ? PATENTS_ID : PATENTS_ID;
+
+        const response = await databases.listDocuments(databaseId, collectionId, [
           Query.equal("startupId", startupId),
         ]);
         const filteredDocuments = response.documents.map(doc => {
@@ -54,7 +58,7 @@ const Patents: React.FC<PatentsProps> = ({ startupId }) => {
       }
     };
     fetchPatentsData();
-  }, [startupId]);
+  }, [startupId, isStartupRoute]);
   
 
   const handleSavePatent = async () => {
@@ -127,7 +131,9 @@ const Patents: React.FC<PatentsProps> = ({ startupId }) => {
     <div>
       <div className="flex justify-between items-center">
         <h3 className="container text-lg font-medium mb-2 -mt-4">Patents</h3>
+        { !isStartupRoute && (
         <ButtonWithIcon label="Add" onClick={() => setIsDialogOpen(true)} />
+        )}
       </div>
 
       <div className="p-2 bg-white shadow-md rounded-lg border border-gray-300">
